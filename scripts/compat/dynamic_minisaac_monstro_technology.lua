@@ -1,4 +1,4 @@
-﻿local WeaponSynergies = {}
+local WeaponSynergies = {}
 
 local MONSTROS_LUNG = CollectibleType.COLLECTIBLE_MONSTROS_LUNG
 local BRIMSTONE = CollectibleType.COLLECTIBLE_BRIMSTONE
@@ -39,6 +39,7 @@ local function comboFor(player)
         if hasTechX then return "monstro_tech_x" end
         if hasBrimstone then return "monstro_brimstone" end
         if hasTechnology then return "monstro_technology" end
+        return "monstro"
     end
 
     if hasBrimstone and hasTechX then
@@ -47,6 +48,9 @@ local function comboFor(player)
     if hasBrimstone and hasTechnology then
         return "brimstone_technology"
     end
+    if hasTechX then return "tech_x" end
+    if hasBrimstone then return "brimstone" end
+    if hasTechnology then return "technology" end
 end
 
 local function directionVector(familiar, fallback)
@@ -70,9 +74,11 @@ end
 local function chargeDelay(player, combo)
     local dynamic = DynamicMinisaacContinued
     local delay = BASE_CHARGE_DELAY
-    if combo == "brimstone_tech_x" then
+    if combo == "tech_x" or combo == "brimstone_tech_x" then
         delay = dynamic.TearDelayMult.TECH_X or 3
-    elseif combo == "brimstone_technology" then
+    elseif combo == "technology" then
+        delay = 1
+    elseif combo == "brimstone" or combo == "brimstone_technology" then
         delay = dynamic.TearDelayMult.BRIM or BASE_CHARGE_DELAY
     else
         delay = dynamic.TearDelayMult.MONSTRO or BASE_CHARGE_DELAY
@@ -100,6 +106,135 @@ local function configureLaser(laser, familiar, damage, isBurst)
     laser.TearFlags = familiar.Player.TearFlags
     laser:GetData().AscentionDynamicMinisaacOwner = familiar
     if isBurst then laser:GetData()[BURST_MEMBER_KEY] = true end
+end
+
+local burstSettings
+
+local function shotFormation(player, familiar, direction, speed)
+    local params = player:GetMultiShotParams(WeaponType.WEAPON_TEARS)
+    local count = math.max(1, math.min(16, params:GetNumTears()))
+    local shots = {}
+    for index = 0, count - 1 do
+        local posVel = player:GetMultiShotPositionVelocity(
+            index,
+            WeaponType.WEAPON_TEARS,
+            direction,
+            speed,
+            params
+        )
+        table.insert(shots, {
+            position = posVel.Position * 4,
+            velocity = posVel.Velocity,
+        })
+    end
+
+    if params:IsShootingBackwards() then
+        table.insert(shots, {
+            position = Vector.Zero,
+            velocity = direction:Rotated(180):Resized(speed),
+        })
+    end
+    if params:IsShootingSideways() then
+        table.insert(shots, {
+            position = Vector.Zero,
+            velocity = direction:Rotated(90):Resized(speed),
+        })
+        table.insert(shots, {
+            position = Vector.Zero,
+            velocity = direction:Rotated(-90):Resized(speed),
+        })
+    end
+
+    local rng = familiar:GetDropRNG()
+    for _ = 1, math.min(params:GetNumRandomDirTears(), 3) do
+        table.insert(shots, {
+            position = Vector.Zero,
+            velocity = Vector.FromAngle(rng:RandomFloat() * 360):Resized(speed),
+        })
+    end
+    return shots
+end
+
+local function fireTechnology(player, familiar, direction, damage)
+    for _, shot in ipairs(shotFormation(player, familiar, direction, 1)) do
+        local laser = Isaac.Spawn(
+            EntityType.ENTITY_LASER,
+            LaserVariant.THIN_RED,
+            0,
+            familiar.Position + shot.position,
+            Vector.Zero,
+            familiar
+        ):ToLaser()
+        laser.Timeout = 1
+        laser.DisableFollowParent = true
+        laser.AngleDegrees = shot.velocity:GetAngleDegrees()
+        laser.MaxDistance = 150
+        configureLaser(laser, familiar, damage, true)
+    end
+end
+
+local function fireBrimstone(player, familiar, direction, damage)
+    for _, shot in ipairs(shotFormation(player, familiar, direction, 1)) do
+        local laser = player:FireBrimstone(
+            shot.velocity:Normalized(),
+            familiar,
+            DAMAGE_MULTIPLIER
+        )
+        laser.Position = familiar.Position + shot.position
+        laser.Timeout = 5
+        laser.MaxDistance = 150
+        configureLaser(laser, familiar, damage, true)
+    end
+end
+
+local function fireTechX(player, familiar, direction, damage)
+    for _, shot in ipairs(shotFormation(player, familiar, direction, 10)) do
+        local laser = player:FireTechXLaser(
+            familiar.Position + shot.position,
+            shot.velocity,
+            TECH_X_RADIUS,
+            familiar,
+            DAMAGE_MULTIPLIER
+        )
+        configureLaser(laser, familiar, damage, true)
+    end
+end
+
+local function fireMonstro(player, familiar, direction, damage)
+    local params = player:GetMultiShotParams(WeaponType.WEAPON_TEARS)
+    local count, directions = burstSettings(
+        player,
+        familiar,
+        direction
+    )
+    local effects = player:GetTearHitParams(
+        WeaponType.WEAPON_TEARS,
+        1,
+        1,
+        player
+    )
+    local rng = familiar:GetDropRNG()
+    for _, burstDirection in ipairs(directions) do
+        for _ = 1, math.max(10, count + 4) do
+            local velocity = burstDirection:Rotated(
+                -20 + rng:RandomFloat() * 40
+            ):Resized(7 + rng:RandomFloat() * 3)
+            local tear = Isaac.Spawn(
+                EntityType.ENTITY_TEAR,
+                effects.TearVariant,
+                0,
+                familiar.Position,
+                velocity,
+                player
+            ):ToTear()
+            tear.CollisionDamage = damage
+            tear.Color = effects.TearColor
+            tear.TearFlags = effects.TearFlags
+            tear.Scale = 0.6
+            tear:GetData()[BURST_MEMBER_KEY] = true
+            tear:GetData().AscentionDynamicMinisaacOwner = familiar
+        end
+    end
 end
 
 local function fireTechnologyBurst(player, familiar, direction, damage, count)
@@ -157,30 +292,10 @@ local function fireTechXBurst(player, familiar, direction, damage, count)
     end
 end
 
-local function fireBrimstoneTechnology(player, familiar, direction, damage)
-    local laser = player:FireBrimstone(
-        direction,
-        familiar,
-        DAMAGE_MULTIPLIER
-    )
-    laser.Timeout = 5
-    laser.MaxDistance = 150
-    configureLaser(laser, familiar, damage)
-end
-
-local function fireBrimstoneTechX(player, familiar, direction, damage)
-    local laser = player:FireTechXLaser(
-        familiar.Position,
-        direction * 10,
-        TECH_X_RADIUS,
-        familiar,
-        DAMAGE_MULTIPLIER
-    )
-    configureLaser(laser, familiar, damage)
-end
-
-local function burstSettings(player, familiar, direction, weaponType)
-    local params = player:GetMultiShotParams(weaponType)
+burstSettings = function(player, familiar, direction)
+    -- Special weapon params may omit regular multishot collectibles. Monstro's
+    -- extra projectiles are derived from the player's canonical tear layout.
+    local params = player:GetMultiShotParams(WeaponType.WEAPON_TEARS)
     local eyes = math.max(1, params:GetNumEyesActive())
     local lanesPerEye = math.max(1, params:GetNumLanesPerEye())
     local count = BURST_LASERS
@@ -214,20 +329,22 @@ local function burstSettings(player, familiar, direction, weaponType)
 end
 local function executeCombo(combo, player, familiar, direction)
     local damage = player.Damage * DAMAGE_MULTIPLIER
-    if combo == "monstro_technology"
+    if combo == "technology" then
+        fireTechnology(player, familiar, direction, damage)
+    elseif combo == "brimstone" then
+        fireBrimstone(player, familiar, direction, damage)
+    elseif combo == "tech_x" then
+        fireTechX(player, familiar, direction, damage)
+    elseif combo == "monstro" then
+        fireMonstro(player, familiar, direction, damage)
+    elseif combo == "monstro_technology"
         or combo == "monstro_brimstone"
         or combo == "monstro_tech_x"
     then
-        local weaponType = combo == "monstro_tech_x"
-            and WeaponType.WEAPON_TECH_X
-            or (combo == "monstro_brimstone"
-                and WeaponType.WEAPON_BRIMSTONE
-                or WeaponType.WEAPON_LASER)
         local count, directions = burstSettings(
             player,
             familiar,
-            direction,
-            weaponType
+            direction
         )
         for _, burstDirection in ipairs(directions) do
             if combo == "monstro_technology" then
@@ -245,9 +362,9 @@ local function executeCombo(combo, player, familiar, direction)
             end
         end
     elseif combo == "brimstone_technology" then
-        fireBrimstoneTechnology(player, familiar, direction, damage)
+        fireBrimstone(player, familiar, direction, damage)
     elseif combo == "brimstone_tech_x" then
-        fireBrimstoneTechX(player, familiar, direction, damage)
+        fireTechX(player, familiar, direction, damage)
     end
 end
 
@@ -299,4 +416,3 @@ function WeaponSynergies.Register(mod)
 end
 
 return WeaponSynergies
-

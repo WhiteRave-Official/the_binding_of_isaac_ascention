@@ -1,4 +1,4 @@
-﻿local Multishot = {}
+local Multishot = {}
 
 local MAX_FORMATION_SHOTS = 16
 local FORMATION_POSITION_SCALE = 4.0
@@ -14,8 +14,19 @@ local TEAR_SCALE_SOURCE_KEY = "AscentionDynamicMinisaacScaleSource"
 local TEAR_SCALE_SYNC_KEY = "AscentionDynamicMinisaacScaleSyncTicks"
 local BURST_MEMBER_KEY = "AscentionDynamicMinisaacBurstMember"
 local LASER_SCALE_KEY = "AscentionDynamicMinisaacLaserScaled"
+local ATTACK_FRAME_KEY = "AscentionDynamicMinisaacAttackFrame"
+local SPIRIT_SPIN_KEY = "AscentionDynamicMinisaacSpiritSpin"
+local SPIRIT_PROCESSED_KEY = "AscentionDynamicMinisaacSpiritProcessed"
 
 local spawningClone = false
+
+local RECURSIVE_SPLIT_FLAGS = TearFlags.TEAR_SPLIT
+    | TearFlags.TEAR_QUADSPLIT
+    | TearFlags.TEAR_BONE
+    | TearFlags.TEAR_BURSTSPLIT
+    | TearFlags.TEAR_ABSORB
+    | TearFlags.TEAR_LASERSHOT
+    | TearFlags.TEAR_SPORE
 
 local BRIMSTONE_VARIANTS = {
     [LaserVariant.THICK_RED] = true,
@@ -45,7 +56,53 @@ local function resolveOwner(entity)
     if stored and stored:Exists() then
         return asMiniIsaac(stored)
     end
-    return asMiniIsaac(entity.Parent) or asMiniIsaac(entity.SpawnerEntity)
+
+    local direct = asMiniIsaac(entity.Parent)
+        or asMiniIsaac(entity.SpawnerEntity)
+    if direct then return direct end
+
+    local parent = entity.Parent
+    local parentOwner = parent and parent:GetData()[OWNER_KEY]
+    if parentOwner and parentOwner:Exists() then
+        entity:GetData()[OWNER_KEY] = parentOwner
+        return asMiniIsaac(parentOwner)
+    end
+
+    -- Dynamic Minisaacs creates some special attacks with the player as owner.
+    -- Only claim outputs created during an actual Mini Isaac attack frame.
+    local spawner = entity.SpawnerEntity
+    local sourcePlayer = spawner and spawner:ToPlayer()
+    if not sourcePlayer or entity.FrameCount > 2 then return nil end
+
+    local frame = Game():GetFrameCount()
+    local nearest
+    local nearestDistance = math.huge
+    for _, candidateEntity in ipairs(Isaac.FindInRadius(
+        entity.Position,
+        32,
+        EntityPartition.FAMILIAR
+    )) do
+        local candidate = asMiniIsaac(candidateEntity)
+        local attackFrame = candidate
+            and candidate:GetData()[ATTACK_FRAME_KEY]
+        if candidate
+            and sameEntity(candidate.Player, sourcePlayer)
+            and attackFrame
+            and frame - attackFrame >= 0
+            and frame - attackFrame <= 2
+        then
+            local distance = candidate.Position:DistanceSquared(entity.Position)
+            if distance < nearestDistance then
+                nearest = candidate
+                nearestDistance = distance
+            end
+        end
+    end
+
+    if nearest then
+        entity:GetData()[OWNER_KEY] = nearest
+    end
+    return nearest
 end
 
 local function storeOwner(entity, familiar)
@@ -63,6 +120,18 @@ local function directionForFamiliar(familiar)
         return Vector(0, 1)
     end
     return Vector(0, 1)
+end
+
+local function hasSpecialWeapon(player)
+    return player:HasWeaponType(WeaponType.WEAPON_BRIMSTONE)
+        or player:HasWeaponType(WeaponType.WEAPON_LASER)
+        or player:HasWeaponType(WeaponType.WEAPON_TECH_X)
+        or player:HasWeaponType(WeaponType.WEAPON_KNIFE)
+        or player:HasWeaponType(WeaponType.WEAPON_MONSTROS_LUNGS)
+        or player:HasWeaponType(WeaponType.WEAPON_SPIRIT_SWORD)
+        or player:HasWeaponType(WeaponType.WEAPON_BOMBS)
+        or player:HasWeaponType(WeaponType.WEAPON_FETUS)
+        or player:HasWeaponType(WeaponType.WEAPON_ROCKETS)
 end
 
 local function weaponTypeFor(entity, player)
@@ -107,6 +176,31 @@ local function entityDirection(entity, familiar)
         return entity.Velocity:Normalized(), entity.Velocity:Length()
     end
     return directionForFamiliar(familiar), 10
+end
+
+local function multishotScore(params)
+    local score = math.max(1, params:GetNumTears())
+        + math.max(0, params:GetNumEyesActive() - 1)
+        + math.max(0, params:GetNumRandomDirTears())
+    if params:IsShootingBackwards() then score = score + 1 end
+    if params:IsShootingSideways() then score = score + 2 end
+    return score
+end
+
+local function resolveMultishotParams(player, weaponType)
+    local weaponParams = player:GetMultiShotParams(weaponType)
+    if weaponType == WeaponType.WEAPON_TEARS then
+        return weaponParams, weaponType
+    end
+
+    -- Several special weapon types report a single native shot even when the
+    -- player's tear formation contains 20/20, Inner Eye, Mutant Spider, etc.
+    -- Use the regular tear formation when it carries more multishot data.
+    local tearParams = player:GetMultiShotParams(WeaponType.WEAPON_TEARS)
+    if multishotScore(tearParams) > multishotScore(weaponParams) then
+        return tearParams, WeaponType.WEAPON_TEARS
+    end
+    return weaponParams, weaponType
 end
 
 local function buildFormation(player, familiar, weaponType, direction, speed, params)
@@ -243,13 +337,21 @@ local function cloneLaser(source, familiar, position, velocity)
             familiar,
             1
         )
+    elseif BRIMSTONE_VARIANTS[source.Variant] then
+        clone = player:FireBrimstone(
+            velocity:Normalized(),
+            familiar,
+            1
+        )
     else
-        clone = EntityLaser.ShootAngle(
+        -- ShootAngle can turn Dynamic's one-frame Technology attack into an
+        -- attached persistent beam. Clone its raw laser variant instead.
+        clone = Isaac.Spawn(
+            EntityType.ENTITY_LASER,
             source.Variant,
+            source.SubType,
             position,
-            velocity:GetAngleDegrees(),
-            math.max(1, source.Timeout),
-            source.PositionOffset,
+            Vector.Zero,
             familiar
         ):ToLaser()
     end
@@ -260,6 +362,7 @@ local function cloneLaser(source, familiar, position, velocity)
         clone.Velocity = velocity
     else
         clone.AngleDegrees = velocity:GetAngleDegrees()
+        clone.Timeout = math.max(1, source.Timeout)
     end
     return clone
 end
@@ -287,8 +390,13 @@ local function cloneKnife(source, familiar, position, velocity, baseDirection)
 
     local sourceData = source:GetData()
     if sourceData.DisappearMinisaac then
-        clone:GetData().DisappearMinisaac = true
+        local cloneData = clone:GetData()
+        cloneData.DisappearMinisaac = true
+        cloneData[SPIRIT_PROCESSED_KEY] = true
+        cloneData[SPIRIT_SPIN_KEY] = sourceData[SPIRIT_SPIN_KEY]
         clone:GetSprite():Play(source:GetSprite():GetAnimation(), true)
+        clone:SetIsSwinging(source:GetIsSwinging())
+        clone:SetIsSpinAttack(source:GetIsSpinAttack())
     end
     return clone
 end
@@ -320,19 +428,26 @@ local function expandEntity(entity, familiar, paramsByWeapon)
     if not player then return end
 
     local weaponType = weaponTypeFor(entity, player)
-    local params = paramsByWeapon[weaponType]
-    if not params then
-        params = player:GetMultiShotParams(weaponType)
-        paramsByWeapon[weaponType] = params
+    local cached = paramsByWeapon[weaponType]
+    if not cached then
+        local params, formationWeaponType = resolveMultishotParams(
+            player,
+            weaponType
+        )
+        cached = {
+            params = params,
+            weaponType = formationWeaponType,
+        }
+        paramsByWeapon[weaponType] = cached
     end
     local direction, speed = entityDirection(entity, familiar)
     local formation = buildFormation(
         player,
         familiar,
-        weaponType,
+        cached.weaponType,
         direction,
         speed,
-        params
+        cached.params
     )
     data[EXPANDED_KEY] = true
     storeOwner(entity, familiar)
@@ -384,7 +499,9 @@ local function collectFreshAttacks(familiar, technicalTear)
         end
     end
 
-    if not technicalTear:GetData().RemoveMinisaacTimer then
+    if technicalTear
+        and not technicalTear:GetData().RemoveMinisaacTimer
+    then
         table.insert(attacks, technicalTear)
     end
     return attacks
@@ -505,20 +622,80 @@ local function expandMonstroBurst(attacks, familiar, paramsByWeapon)
 
     return true
 end
-local function onTearInit(_, tear)
+local function trackTechnicalAttack(_, tear)
     if spawningClone then return end
 
     local familiar = asMiniIsaac(tear.SpawnerEntity)
-    if not familiar or not familiar.Player then return end
+    if familiar then
+        familiar:GetData()[ATTACK_FRAME_KEY] = Game():GetFrameCount()
+        if familiar.Player and hasSpecialWeapon(familiar.Player) then
+            DynamicMinisaacContinued:RemoveDefaultTear(tear)
+            if familiar.Player:HasWeaponType(WeaponType.WEAPON_KNIFE) then
+                familiar:GetData().IsShootingMinisaacKnife = true
+            end
+        end
+    end
+end
 
-    local paramsByWeapon = {}
-    local attacks = collectFreshAttacks(familiar, tear)
-    if expandMonstroBurst(attacks, familiar, paramsByWeapon) then
+local function isSplitChild(tear)
+    local parent = tear.Parent
+    local spawner = tear.SpawnerEntity
+    return (parent and parent.Type == EntityType.ENTITY_TEAR)
+        or (spawner and spawner.Type == EntityType.ENTITY_TEAR)
+end
+
+local function sanitizeSplitChild(_, tear)
+    if not isSplitChild(tear) then return end
+    if resolveOwner(tear) then
+        tear:ClearTearFlags(RECURSIVE_SPLIT_FLAGS)
+        tear:GetData()[EXPANDED_KEY] = true
+    end
+end
+
+local function sanitizeFiredSplitTear(_, tear, sourceEntity)
+    local familiar = sourceEntity and resolveOwner(sourceEntity)
+    if not familiar then return end
+
+    storeOwner(tear, familiar)
+    tear:ClearTearFlags(RECURSIVE_SPLIT_FLAGS)
+    tear:GetData()[EXPANDED_KEY] = true
+end
+
+local function expandDeferredLaser(_, laser)
+    if spawningClone then return end
+    local data = laser:GetData()
+    if data[EXPANDED_KEY] or data[BURST_MEMBER_KEY] then return end
+
+    local familiar = resolveOwner(laser)
+    if not familiar or not familiar.Player then return end
+    expandEntity(laser, familiar, {})
+end
+
+local function expandDeferredTear(_, tear)
+    if spawningClone then return end
+    local data = tear:GetData()
+    if data[EXPANDED_KEY] or data[CLONE_KEY] or data.RemoveMinisaacTimer then
         return
     end
-    for _, attack in ipairs(attacks) do
-        expandEntity(attack, familiar, paramsByWeapon)
-    end
+
+    local familiar = resolveOwner(tear)
+    if not familiar or not familiar.Player then return end
+
+    -- Special weapons are represented by their actual laser/knife/burst
+    -- entities. Their technical tears must never become visible multishots.
+    if hasSpecialWeapon(familiar.Player) then return end
+
+    expandEntity(tear, familiar, {})
+end
+
+local function expandDeferredKnife(_, knife)
+    if spawningClone then return end
+    local data = knife:GetData()
+    if data[EXPANDED_KEY] or not data.DisappearMinisaac then return end
+
+    local familiar = resolveOwner(knife)
+    if not familiar or not familiar.Player then return end
+    expandEntity(knife, familiar, {})
 end
 
 local function collectPersistentKnives(familiar)
@@ -613,33 +790,41 @@ local function maintainKnifeFormation(_, familiar)
     end
 
     local familiarData = familiar:GetData()
-    local baseFlying = base:IsFlying()
-    if baseFlying and not familiarData[KNIFE_VOLLEY_KEY] then
+    local anyFlying = false
+    for _, knife in ipairs(knives) do
+        if knife:IsFlying() then
+            anyFlying = true
+            break
+        end
+    end
+    if anyFlying and not familiarData[KNIFE_VOLLEY_KEY] then
         local speedMultiplier = 1
         if DynamicMinisaacContinued.PlayerHasBFFS
             and DynamicMinisaacContinued:PlayerHasBFFS(familiar)
         then
             speedMultiplier = 1.4
         end
-        for index = 2, #knives do
-            if not knives[index]:IsFlying() then
-                knives[index]:Shoot(
+        for _, knife in ipairs(knives) do
+            if not knife:IsFlying() then
+                knife:Shoot(
                     0.7 * speedMultiplier,
                     190 * speedMultiplier
                 )
             end
         end
     end
-    familiarData[KNIFE_VOLLEY_KEY] = baseFlying
+    familiarData[KNIFE_VOLLEY_KEY] = anyFlying
 end
 
 local function updateKnifeAngle(_, knife)
     local familiar = resolveOwner(knife)
     if not familiar then return end
 
-    local offset = knife:GetData()[KNIFE_ANGLE_KEY]
-    if offset then
-        knife.Rotation = directionForFamiliar(familiar):GetAngleDegrees() + offset
+    local data = knife:GetData()
+    local offset = data[KNIFE_ANGLE_KEY] or 0
+    local baseAngle = directionForFamiliar(familiar):GetAngleDegrees()
+    if not data.DisappearMinisaac and data[KNIFE_ANGLE_KEY] then
+        knife.Rotation = baseAngle + offset
     end
 end
 
@@ -684,17 +869,25 @@ function Multishot.Register(mod)
         mod:AddCallback(overrideCallback, overrideCloneProcessing)
     end
 
-    mod:AddCallback(ModCallbacks.MC_POST_TEAR_INIT, onTearInit)
+    mod:AddCallback(ModCallbacks.MC_POST_TEAR_INIT, trackTechnicalAttack)
+    mod:AddCallback(ModCallbacks.MC_POST_TEAR_INIT, sanitizeSplitChild)
+    if ModCallbacks.MC_POST_FIRE_SPLIT_TEAR then
+        mod:AddCallback(
+            ModCallbacks.MC_POST_FIRE_SPLIT_TEAR,
+            sanitizeFiredSplitTear
+        )
+    end
     mod:AddCallback(ModCallbacks.MC_POST_TEAR_UPDATE, synchronizeCloneScale)
+    mod:AddCallback(ModCallbacks.MC_POST_TEAR_UPDATE, sanitizeSplitChild)
+    mod:AddCallback(ModCallbacks.MC_POST_TEAR_UPDATE, expandDeferredTear)
+    mod:AddCallback(ModCallbacks.MC_POST_LASER_UPDATE, expandDeferredLaser)
     mod:AddCallback(
         ModCallbacks.MC_FAMILIAR_UPDATE,
         maintainKnifeFormation,
         FamiliarVariant.MINISAAC
     )
+    mod:AddCallback(ModCallbacks.MC_POST_KNIFE_UPDATE, expandDeferredKnife)
     mod:AddCallback(ModCallbacks.MC_POST_KNIFE_UPDATE, updateKnifeAngle)
 end
 
 return Multishot
-
-
-

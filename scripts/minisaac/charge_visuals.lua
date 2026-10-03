@@ -1,13 +1,11 @@
 local ChargeVisuals = {}
 
-local STATE_KEY = "AscentionDynamicMinisaacChargeVisual"
-local BODY_STATE_KEY = "AscentionDynamicMinisaacBodySheet"
+local STATE_KEY = "AscentionMiniIsaacChargeVisual"
+local BODY_STATE_KEY = "AscentionMiniIsaacBodySheet"
 local BLACK_BODY_SHEET = "gfx/familiar/minisaac_charge/familiar_minisaac_black.png"
 local RELEASE_FRAMES = 4
 local RELEASE_SHOT_FRAMES = 2
 local reportedFirstRender = false
-local enemyScanFrame = -1
-local enemyPresent = false
 
 local MONSTROS_LUNG = CollectibleType.COLLECTIBLE_MONSTROS_LUNG
 local TECHNOLOGY = CollectibleType.COLLECTIBLE_TECHNOLOGY
@@ -16,13 +14,23 @@ local profiles = {
     {
         id = "technology_monstros_lung",
         spritePath = "gfx/familiar/minisaac_charge/technology.anm2",
-        delayKey = "MONSTRO",
-        baseDelay = 4,
         releaseFrameCount = 1,
         matches = function(player)
             return player:HasCollectible(MONSTROS_LUNG)
                 and player:HasCollectible(TECHNOLOGY)
         end,
+    },
+    {
+        id = "monstros_lung",
+        weaponType = WeaponType.WEAPON_MONSTROS_LUNGS,
+        spritePath = "gfx/familiar/minisaac_charge/monstros_lung.anm2",
+        releaseFrameCount = 2,
+    },
+    {
+        id = "brimstone",
+        weaponType = WeaponType.WEAPON_BRIMSTONE,
+        spritePath = "gfx/familiar/minisaac_charge/brimstone.anm2",
+        releaseFrameCount = 2,
     },
     {
         id = "technology",
@@ -31,49 +39,7 @@ local profiles = {
         staticCharge = true,
         releaseFrameCount = 1,
     },
-    {
-        id = "monstros_lung",
-        weaponType = WeaponType.WEAPON_MONSTROS_LUNGS,
-        spritePath = "gfx/familiar/minisaac_charge/monstros_lung.anm2",
-        delayKey = "MONSTRO",
-        baseDelay = 4,
-        releaseFrameCount = 2,
-    },
-    {
-        id = "brimstone",
-        weaponType = WeaponType.WEAPON_BRIMSTONE,
-        spritePath = "gfx/familiar/minisaac_charge/brimstone.anm2",
-        delayKey = "BRIM",
-        baseDelay = 4,
-        releaseFrameCount = 2,
-    },
 }
-
-local function isDynamicMinisaacsLoaded()
-    return type(DynamicMinisaacContinued) == "table"
-end
-
-local function hasEnemyTarget()
-    local frame = Game():GetFrameCount()
-    if enemyScanFrame == frame then
-        return enemyPresent
-    end
-
-    enemyScanFrame = frame
-    enemyPresent = false
-    for _, entity in ipairs(Isaac.GetRoomEntities()) do
-        local npc = entity:ToNPC()
-        if npc
-            and npc:IsVulnerableEnemy()
-            and not npc:IsDead()
-            and not npc:HasEntityFlags(EntityFlag.FLAG_FRIENDLY)
-        then
-            enemyPresent = true
-            break
-        end
-    end
-    return enemyPresent
-end
 
 local function getProfile(player)
     for _, profile in ipairs(profiles) do
@@ -86,22 +52,7 @@ local function getProfile(player)
 end
 
 local function getChargeDelay(profile, player)
-    local dynamic = DynamicMinisaacContinued
-    local delay = profile.baseDelay
-
-    if dynamic and dynamic.TearDelayMult then
-        delay = dynamic.TearDelayMult[profile.delayKey] or delay
-    end
-
-    if player:HasCollectible(CollectibleType.COLLECTIBLE_CHOCOLATE_MILK) then
-        local modifier = dynamic
-            and dynamic.TearDelayModif
-            and dynamic.TearDelayModif.CHOC
-            or 2
-        delay = delay * modifier
-    end
-
-    return math.max(1, delay)
+    return math.max(1, math.floor(player.MaxFireDelay + 1))
 end
 
 local function directionName(direction)
@@ -149,7 +100,7 @@ local function getOrCreateState(familiar, profile)
         sprite = sprite,
         direction = Direction.DOWN,
         releaseTimer = 0,
-        lastKeys = familiar.Keys or 0,
+        lastShotFrame = -1,
     }
     data[STATE_KEY] = state
     return state
@@ -185,10 +136,6 @@ local function updateBodySheet(familiar, profile)
     sprite:ReplaceSpritesheet(0, BLACK_BODY_SHEET, true)
 end
 local function updateFamiliar(_, familiar)
-    if not isDynamicMinisaacsLoaded() then
-        return
-    end
-
     local player = familiar.Player
     local profile = player and getProfile(player)
     if not profile then
@@ -199,10 +146,17 @@ local function updateFamiliar(_, familiar)
 
     updateBodySheet(familiar, profile)
     local state = getOrCreateState(familiar, profile)
-    state.hasEnemies = hasEnemyTarget()
-    if state.hasEnemies and familiar.ShootDirection ~= Direction.NO_DIRECTION then
-        state.direction = familiar.ShootDirection
-    elseif not state.hasEnemies then
+    local data = familiar:GetData()
+    local shotFrame = data.AscentionMiniIsaacLastShotFrame or -1
+    local aim = data.AscentionMiniIsaacAim
+    state.active = aim ~= nil and aim:LengthSquared() > 0.01
+    if state.active then
+        if math.abs(aim.X) > math.abs(aim.Y) then
+            state.direction = aim.X < 0 and Direction.LEFT or Direction.RIGHT
+        else
+            state.direction = aim.Y < 0 and Direction.UP or Direction.DOWN
+        end
+    else
         state.direction = animationDirection(familiar, state.direction)
         state.releaseTimer = 0
     end
@@ -211,13 +165,12 @@ local function updateFamiliar(_, familiar)
         state.releaseTimer = state.releaseTimer - 1
     end
 
-    local keys = familiar.Keys or 0
-    if state.hasEnemies and state.lastKeys > 0 and keys == 0 then
+    if state.active and shotFrame ~= state.lastShotFrame then
         state.releaseTimer = RELEASE_FRAMES
-    elseif not state.hasEnemies then
+    elseif not state.active then
         state.releaseTimer = 0
     end
-    state.lastKeys = keys
+    state.lastShotFrame = shotFrame
 end
 
 local function renderFamiliar(_, familiar)
@@ -238,7 +191,7 @@ local function renderFamiliar(_, familiar)
 
     if not reportedFirstRender then
         reportedFirstRender = true
-        Isaac.DebugString("[Ascention] Dynamic Minisaac charge costume render active: " .. state.profileId)
+        Isaac.DebugString("[Ascention] Mini Isaac charge costume render active: " .. state.profileId)
     end
 
     local facing = directionName(state.direction)
@@ -252,10 +205,17 @@ local function renderFamiliar(_, familiar)
     else
         local stage = 0
         if not profile.staticCharge then
-            local delay = getChargeDelay(profile, player)
-            local keys = state.hasEnemies and (familiar.Keys or 0) or 0
-            local progress = math.min(math.max(keys, 0), delay - 1)
-            stage = math.min(3, math.floor(progress * 4 / delay))
+            local pointer = familiar:GetData().AscentionMiniIsaacProxy
+            local proxy = pointer and pointer.Ref
+            local weapon = proxy and proxy:Exists() and proxy:ToFamiliar():GetWeapon()
+            if state.active and weapon and weapon:GetMaxCharge() > 0 then
+                stage = math.min(3, math.floor(weapon:GetCharge()
+                    * 4 / weapon:GetMaxCharge()))
+            elseif state.active then
+                local delay = getChargeDelay(profile, player)
+                local progress = math.min(math.max(delay - familiar.FireCooldown, 0), delay - 1)
+                stage = math.min(3, math.floor(progress * 4 / delay))
+            end
         end
         state.sprite:SetFrame("Charge" .. facing, stage)
     end
@@ -267,27 +227,7 @@ local function renderFamiliar(_, familiar)
     state.sprite:Render(position)
 end
 
-local function markTechnologyShot(_, tear)
-    local familiar = tear.SpawnerEntity and tear.SpawnerEntity:ToFamiliar()
-    if not familiar or familiar.Variant ~= FamiliarVariant.MINISAAC then
-        return
-    end
-
-    local player = familiar.Player
-    local profile = player and getProfile(player)
-    if not profile or profile.id ~= "technology" then
-        return
-    end
-
-    local state = getOrCreateState(familiar, profile)
-    if familiar.ShootDirection ~= Direction.NO_DIRECTION then
-        state.direction = familiar.ShootDirection
-    end
-    state.releaseTimer = RELEASE_FRAMES
-end
 function ChargeVisuals.Register(mod)
-
-    mod:AddCallback(ModCallbacks.MC_POST_TEAR_INIT, markTechnologyShot)
     mod:AddCallback(
         ModCallbacks.MC_FAMILIAR_UPDATE,
         updateFamiliar,
