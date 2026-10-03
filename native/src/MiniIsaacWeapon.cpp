@@ -17,6 +17,7 @@ struct ProxyState {
     unsigned int inputReads = 0;
     unsigned int blockedFireCalls = 0;
     Vector blockedFireArg{ 0.0f, 0.0f };
+    int blockedFireFrame = -1;
     Vector afterFireDirection{ 0.0f, 0.0f };
     unsigned int releases = 0;
     unsigned int projectileCalls = 0;
@@ -24,6 +25,13 @@ struct ProxyState {
     unsigned int techLaserCalls = 0;
     unsigned int techXCalls = 0;
     unsigned int knifeCalls = 0;
+    Vector ownerWeaponDirection{ 0.0f, 0.0f };
+    float ownerWeaponCharge = 0.0f;
+    int ownerHeadDirection = -1;
+    bool ownerCanShoot = false;
+    Vector releaseFireArg{ 0.0f, 0.0f };
+    bool releaseFireSameFrame = false;
+    unsigned int releaseTechXCalls = 0;
 };
 
 std::unordered_map<Entity_Familiar*, ProxyState> proxies;
@@ -72,6 +80,7 @@ bool blockPlayerFire(Weapon* weapon, const Vector& argument) {
     auto& proxy = proxies.at(weapon->GetOwner()->ToFamiliar());
     ++proxy.blockedFireCalls;
     proxy.blockedFireArg = argument;
+    proxy.blockedFireFrame = g_Game ? g_Game->_frameCount : -1;
     return true;
 }
 
@@ -126,6 +135,15 @@ int diagnostics(lua_State* state) {
     lua_pushinteger(state, proxy.techLaserCalls); lua_setfield(state, -2, "tech_lasers");
     lua_pushinteger(state, proxy.techXCalls); lua_setfield(state, -2, "tech_x");
     lua_pushinteger(state, proxy.knifeCalls); lua_setfield(state, -2, "knives");
+    lua_pushnumber(state, proxy.ownerWeaponDirection.x); lua_setfield(state, -2, "owner_dir_x");
+    lua_pushnumber(state, proxy.ownerWeaponDirection.y); lua_setfield(state, -2, "owner_dir_y");
+    lua_pushnumber(state, proxy.ownerWeaponCharge); lua_setfield(state, -2, "owner_charge");
+    lua_pushinteger(state, proxy.ownerHeadDirection); lua_setfield(state, -2, "owner_head");
+    lua_pushboolean(state, proxy.ownerCanShoot); lua_setfield(state, -2, "owner_can_shoot");
+    lua_pushnumber(state, proxy.releaseFireArg.x); lua_setfield(state, -2, "release_input_x");
+    lua_pushnumber(state, proxy.releaseFireArg.y); lua_setfield(state, -2, "release_input_y");
+    lua_pushboolean(state, proxy.releaseFireSameFrame); lua_setfield(state, -2, "release_input_same_frame");
+    lua_pushinteger(state, proxy.releaseTechXCalls); lua_setfield(state, -2, "release_tech_x");
     return 1;
 }
 
@@ -136,13 +154,15 @@ int tickProxy(lua_State* state) {
     const bool hasTarget = lua_toboolean(state, 4) && (x * x + y * y > 0.001f);
     if (!familiar || !registered(familiar) || !g_Game || !familiar->_weapon) {
         lua_pushboolean(state, 0);
-        return 1;
+        lua_pushboolean(state, 0);
+        return 2;
     }
 
     auto& proxy = proxies.at(familiar);
     if (proxy.lastTick == g_Game->_frameCount) {
         lua_pushboolean(state, 0);
-        return 1;
+        lua_pushboolean(state, 0);
+        return 2;
     }
     proxy.lastTick = g_Game->_frameCount;
 
@@ -166,6 +186,8 @@ int tickProxy(lua_State* state) {
     const Vector direction = hasTarget ? Vector{ x / length, y / length } : Vector{ 0.0f, 0.0f };
     *weapon->GetDirection() = direction;
     const int previousShots = weapon->GetNumFired();
+    const unsigned int previousTechX = proxy.techXCalls;
+    Entity_Player* owner = familiar->_player;
     inputProxy = &proxy;
     inputDirection = direction;
     inputShooting = shooting;
@@ -175,15 +197,28 @@ int tickProxy(lua_State* state) {
     proxy.afterFireDirection = *weapon->GetDirection();
     if (releaseCharge) {
         ++proxy.releases;
+        const bool techXOwner = weapon->GetWeaponType() == WEAPON_TECH_X && owner;
+        if (techXOwner) {
+            Weapon* ownerWeapon = owner->_weapon[0];
+            proxy.ownerWeaponDirection = ownerWeapon
+                ? *ownerWeapon->GetDirection() : Vector{ 0.0f, 0.0f };
+            proxy.ownerWeaponCharge = ownerWeapon ? *ownerWeapon->GetCharge() : 0.0f;
+            proxy.ownerHeadDirection = owner->_headDirection;
+            proxy.ownerCanShoot = owner->_canShoot;
+            proxy.releaseFireSameFrame = proxy.blockedFireFrame == g_Game->_frameCount;
+            proxy.releaseFireArg = proxy.blockedFireArg;
+        }
         inputShooting = true;
         inputTriggered = true;
         familiar->Shoot();
+        if (techXOwner) proxy.releaseTechXCalls = proxy.techXCalls - previousTechX;
     }
     firingProxy = false;
     inputProxy = nullptr;
     proxy.wasShooting = shooting;
     lua_pushboolean(state, weapon->GetNumFired() != previousShots);
-    return 1;
+    lua_pushboolean(state, releaseCharge && weapon->GetWeaponType() == WEAPON_TECH_X);
+    return 2;
 }
 
 void registerApi(lua_State* state) {

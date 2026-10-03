@@ -134,6 +134,41 @@ function Router.Register(mod)
         end
         proxy.Position = mini.Position
         proxy.Velocity = Vector.Zero
+        local weapon = proxy:GetWeapon()
+        if weapon and weapon:GetWeaponType() == WeaponType.WEAPON_TECH_X then
+            local target = targetFor(mini)
+            local aim = target and (target.Position - mini.Position) or Vector.Zero
+            local data = mini:GetData()
+            data.AscentionMiniIsaacAim = target and aim or nil
+            local fired, released = native.TickProxy(proxy, aim.X, aim.Y, target ~= nil)
+            if fired then
+                data.AscentionMiniIsaacLastShotFrame = Game():GetFrameCount()
+                data.AscentionMiniIsaacLastShotVelocity = aim
+            end
+            local releaseSamples = data.AscentionMiniIsaacTechXReleases or 0
+            if released and releaseSamples < 8 then
+                data.AscentionMiniIsaacTechXReleases = releaseSamples + 1
+                local state = native.Diagnostics(proxy)
+                Isaac.DebugString("[AscentionMiniIsaac] tech_x_release frame="
+                    .. tostring(Game():GetFrameCount())
+                    .. " mini=" .. tostring(mini.InitSeed)
+                    .. " engine_input=" .. tostring(state.release_input_x) .. ","
+                    .. tostring(state.release_input_y)
+                    .. " same_frame=" .. tostring(state.release_input_same_frame)
+                    .. " owner_head=" .. tostring(state.owner_head)
+                    .. " native_rings=" .. tostring(state.release_tech_x))
+            end
+            local chargeSamples = data.AscentionMiniIsaacTechXChargeSamples or 0
+            if target and chargeSamples < 8 and Game():GetFrameCount() % 90 == 0 then
+                data.AscentionMiniIsaacTechXChargeSamples = chargeSamples + 1
+                Isaac.DebugString("[AscentionMiniIsaac] tech_x_charge frame="
+                    .. tostring(Game():GetFrameCount())
+                    .. " mini=" .. tostring(mini.InitSeed)
+                    .. " charge=" .. tostring(weapon:GetCharge())
+                    .. " max=" .. tostring(weapon:GetMaxCharge()))
+            end
+            return true
+        end
     end, FamiliarVariant.INCUBUS)
 
     mod:AddCallback(ModCallbacks.MC_FAMILIAR_UPDATE, function(_, proxy)
@@ -146,7 +181,23 @@ function Router.Register(mod)
         local target = targetFor(mini)
         local aim = target and (target.Position - mini.Position) or Vector.Zero
         mini:GetData().AscentionMiniIsaacAim = target and aim or nil
-        local fired = native.TickProxy(proxy, aim.X, aim.Y, target ~= nil)
+        local fired, techXRelease = native.TickProxy(proxy, aim.X, aim.Y, target ~= nil)
+        if techXRelease then
+            local data = mini:GetData()
+            local samples = data.AscentionMiniIsaacTechXReleases or 0
+            if samples < 8 then
+                data.AscentionMiniIsaacTechXReleases = samples + 1
+                local state = native.Diagnostics(proxy)
+                Isaac.DebugString("[AscentionMiniIsaac] tech_x_release frame="
+                    .. tostring(Game():GetFrameCount())
+                    .. " mini=" .. tostring(mini.InitSeed)
+                    .. " engine_input=" .. tostring(state.release_input_x) .. ","
+                    .. tostring(state.release_input_y)
+                    .. " same_frame=" .. tostring(state.release_input_same_frame)
+                    .. " owner_head=" .. tostring(state.owner_head)
+                    .. " native_rings=" .. tostring(state.release_tech_x))
+            end
+        end
         local weapon = proxy:GetWeapon()
         if target and weapon and Game():GetFrameCount() % 100 == 0 then
             local data = mini:GetData()
@@ -186,7 +237,12 @@ function Router.Register(mod)
                     .. " brimstones=" .. tostring(state.brimstones)
                     .. " tech_lasers=" .. tostring(state.tech_lasers)
                     .. " tech_x=" .. tostring(state.tech_x)
-                    .. " knives=" .. tostring(state.knives))
+                    .. " knives=" .. tostring(state.knives)
+                    .. " owner_dir=" .. tostring(state.owner_dir_x) .. ","
+                    .. tostring(state.owner_dir_y)
+                    .. " owner_charge=" .. tostring(state.owner_charge)
+                    .. " owner_head=" .. tostring(state.owner_head)
+                    .. " owner_can_shoot=" .. tostring(state.owner_can_shoot))
             end
         end
         if fired then
