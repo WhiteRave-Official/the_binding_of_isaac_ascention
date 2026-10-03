@@ -5,6 +5,66 @@ local OWNER_KEY = "AscentionMiniIsaacProxyOwner"
 local TARGET_REFRESH_INTERVAL = 6
 local native = AscentionNative
 
+local HELD_KNIFE_OFFSETS = {
+    [Direction.DOWN] = Vector(0, 8),
+    [Direction.UP] = Vector(0, -8),
+    [Direction.LEFT] = Vector(-8, 0),
+    [Direction.RIGHT] = Vector(8, 0),
+}
+
+local HELD_KNIFE_ROTATIONS = {
+    [Direction.DOWN] = 0,
+    [Direction.UP] = 180,
+    [Direction.LEFT] = 90,
+    [Direction.RIGHT] = -90,
+}
+
+local function knifeFacing(mini)
+    local aim = mini:GetData().AscentionMiniIsaacAim
+    if aim and aim:LengthSquared() > 0.01 then
+        if math.abs(aim.X) > math.abs(aim.Y) then
+            return aim.X < 0 and Direction.LEFT or Direction.RIGHT
+        end
+        return aim.Y < 0 and Direction.UP or Direction.DOWN
+    end
+
+    local animation = mini:GetSprite():GetAnimation() or ""
+    if animation:find("Up", 1, true) then return Direction.UP end
+    if animation:find("Left", 1, true) then return Direction.LEFT end
+    if animation:find("Right", 1, true) then return Direction.RIGHT end
+    return Direction.DOWN
+end
+
+local function heldKnifeSprite(knife)
+    local data = knife:GetData()
+    local source = knife:GetSprite()
+    local filename = source:GetFilename()
+    local layer = source:GetLayer(0)
+    local sheet = layer and layer:GetSpritesheetPath()
+    local state = data.AscentionMiniIsaacHeldSprite
+    if state and state.filename == filename and state.sheet == sheet then
+        return state.sprite
+    end
+
+    local sprite = Sprite()
+    sprite:Load(filename, true)
+    if sheet then sprite:ReplaceSpritesheet(0, sheet, true) end
+    sprite:SetFrame("Idle", 0)
+    data.AscentionMiniIsaacHeldSprite = { sprite = sprite, filename = filename, sheet = sheet }
+    return sprite
+end
+
+local function renderHeldKnife(knife, mini, direction)
+    local sprite = heldKnifeSprite(knife)
+    sprite.Rotation = HELD_KNIFE_ROTATIONS[direction]
+    -- Flip before rotation so the left-facing blade mirrors the right-facing one.
+    sprite.FlipY = direction == Direction.LEFT
+    sprite.Scale = Vector(knife.Scale * knife.SpriteScale.X,
+        knife.Scale * knife.SpriteScale.Y)
+    sprite:Render(Isaac.WorldToRenderPosition(mini.Position + mini.PositionOffset)
+        + HELD_KNIFE_OFFSETS[direction])
+end
+
 local function active()
     return native and native.abi == 1
         and type(DynamicMinisaacContinued) ~= "table"
@@ -118,10 +178,30 @@ function Router.Register(mod)
 
     mod:AddCallback(ModCallbacks.MC_FAMILIAR_UPDATE, function(_, mini)
         if not Router.IsManaging(mini) then
+            local data = mini:GetData()
+            if data.AscentionMiniIsaacOriginalDepthOffset ~= nil then
+                mini.DepthOffset = data.AscentionMiniIsaacOriginalDepthOffset
+                data.AscentionMiniIsaacOriginalDepthOffset = nil
+            end
+            data.AscentionMiniIsaacHeldKnife = nil
             removeProxy(mini)
             return
         end
-        ensureProxy(mini)
+        local proxy = ensureProxy(mini)
+        local data = mini:GetData()
+        local weapon = proxy and proxy:GetWeapon()
+        if weapon and weapon:GetWeaponType() == WeaponType.WEAPON_KNIFE then
+            if data.AscentionMiniIsaacOriginalDepthOffset == nil then
+                data.AscentionMiniIsaacOriginalDepthOffset = mini.DepthOffset
+            end
+            mini.DepthOffset = -100
+        elseif data.AscentionMiniIsaacOriginalDepthOffset ~= nil then
+            mini.DepthOffset = data.AscentionMiniIsaacOriginalDepthOffset
+            data.AscentionMiniIsaacOriginalDepthOffset = nil
+            data.AscentionMiniIsaacHeldKnife = nil
+        else
+            data.AscentionMiniIsaacHeldKnife = nil
+        end
     end, FamiliarVariant.MINISAAC)
 
     mod:AddCallback(ModCallbacks.MC_PRE_FAMILIAR_UPDATE, function(_, proxy)
@@ -140,24 +220,20 @@ function Router.Register(mod)
             local mainEntity = weapon:GetMainEntity()
             local knife = mainEntity and mainEntity:ToKnife()
             if not knife then return end
+            local knifeData = knife:GetData()
+            if not knifeData.AscentionMiniIsaacRenderOwner then
+                knifeData.AscentionMiniIsaacRenderOwner = EntityPtr(mini)
+                mini:GetData().AscentionMiniIsaacHeldKnife = EntityPtr(knife)
+                Isaac.DebugString("[AscentionMiniIsaac] knife_render_bind knife="
+                    .. tostring(knife.InitSeed) .. " mini=" .. tostring(mini.InitSeed)
+                    .. " proxy=" .. tostring(proxy.InitSeed))
+            end
 
             local data = mini:GetData()
             local proxyData = proxy:GetData()
             if not proxyData.AscentionMiniIsaacKnifeInitialized then
                 proxyData.AscentionMiniIsaacKnifeInitialized = true
                 knife:Reset()
-            end
-            local stateSamples = proxyData.AscentionMiniIsaacKnifeStateSamples or 0
-            if stateSamples < 8 and Game():GetFrameCount() % 30 == 0 then
-                proxyData.AscentionMiniIsaacKnifeStateSamples = stateSamples + 1
-                Isaac.DebugString("[AscentionMiniIsaac] knife_state frame="
-                    .. tostring(Game():GetFrameCount())
-                    .. " mini=" .. tostring(mini.InitSeed)
-                    .. " flying=" .. tostring(knife:IsFlying())
-                    .. " weapon_charge=" .. tostring(weapon:GetCharge())
-                    .. " knife_charge=" .. tostring(knife.Charge)
-                    .. " launch_frame=" .. tostring(proxyData.AscentionMiniIsaacKnifeFlightFrame)
-                    .. " target=" .. tostring(targetFor(mini) ~= nil))
             end
             if knife:IsFlying() then
                 local launchFrame = proxyData.AscentionMiniIsaacKnifeFlightFrame
@@ -184,16 +260,6 @@ function Router.Register(mod)
                 proxyData.AscentionMiniIsaacKnifeFlightFrame = Game():GetFrameCount()
                 data.AscentionMiniIsaacLastShotFrame = Game():GetFrameCount()
                 data.AscentionMiniIsaacLastShotVelocity = aim
-                local samples = data.AscentionMiniIsaacKnifeReleases or 0
-                if samples < 4 then
-                    data.AscentionMiniIsaacKnifeReleases = samples + 1
-                    Isaac.DebugString("[AscentionMiniIsaac] knife_release frame="
-                        .. tostring(Game():GetFrameCount())
-                        .. " weapon_charge=" .. tostring(weapon:GetCharge())
-                        .. " knife_charge=" .. tostring(knife and knife.Charge or "none")
-                        .. " flying=" .. tostring(knife and knife:IsFlying() or false)
-                        .. " max_distance=" .. tostring(knife and knife.MaxDistance or "none"))
-                end
             end
             return true
         end
@@ -327,6 +393,24 @@ function Router.Register(mod)
             end
         end
     end, FamiliarVariant.INCUBUS)
+
+    mod:AddCallback(ModCallbacks.MC_PRE_KNIFE_RENDER, function(_, knife)
+        local data = knife:GetData()
+        local owner = data.AscentionMiniIsaacRenderOwner
+        local mini = owner and owner.Ref
+        if not mini or not mini:Exists() or knife:IsFlying() then return end
+        return false
+    end)
+
+    mod:AddCallback(ModCallbacks.MC_PRE_FAMILIAR_RENDER, function(_, mini)
+        if not Router.IsManaging(mini) then return end
+        local pointer = mini:GetData().AscentionMiniIsaacHeldKnife
+        local entity = pointer and pointer.Ref
+        local knife = entity and entity:Exists() and entity:ToKnife()
+        if knife and not knife:IsFlying() then
+            renderHeldKnife(knife, mini, knifeFacing(mini))
+        end
+    end, FamiliarVariant.MINISAAC)
 
     mod:AddCallback(ModCallbacks.MC_PRE_FAMILIAR_RENDER, function(_, proxy)
         if Router.IsProxy(proxy) then return false end
