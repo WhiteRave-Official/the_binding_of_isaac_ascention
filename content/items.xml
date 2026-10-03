@@ -1,0 +1,4 @@
+<items gfxroot="gfx/items/" version="1">
+    <passive id="1" name="Golden Eye" description="Let it see for you" gfx="collectible_golden_eye.png" cache="familiars firedelay tearflag" quality="4" craftquality="4" tags="summonable offensive"/>
+    <passive id="2" name="Arclight" description="Let there be light" gfx="collectibles_arclight.png" quality="4" craftquality="4" tags="offensive"/>
+</items>

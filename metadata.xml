@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata>
+    <name>The Binding Of Isaac - Ascention</name>
+    <directory>the_binding_of_isaac_ascention</directory>
+    <id>0</id>
+    <description>Base project for The Binding Of Isaac - Ascention.</description>
+    <version>0.2.0</version>
+    <visibility>Private</visibility>
+    <tag id="Lua"/>
+</metadata>

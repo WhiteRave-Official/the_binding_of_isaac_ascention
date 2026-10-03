@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<players root="gfx/characters/costumes/"
+         portraitroot="gfx/ui/boss/"
+         nameimageroot="gfx/ui/boss/"
+         bigportraitroot="gfx/ui/stage/">
+    <player name="Geburah"
+            skin="character_geburah.png"
+            hp="2" black="2"
+            nameimage="playername_geburah.png"
+            portrait="playerportrait_geburah.png"
+            bigportrait="playerportrait_geburah.png"
+            skinColor="-1"
+            costumeSuffix="geburah"
+            birthright="???" />
+</players>
+
+

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<costumes anm2root="gfx/">
+    <costume id="1" anm2path="characters/golden_eye.anm2" type="passive" priority="99" />
+    <costume id="2" anm2path="characters/geburah_hair.anm2" type="none" priority="200" />
+    <costume id="3" anm2path="characters/geburah_hair_monstros_lung.anm2" type="none" priority="200" />
+    <costume id="4" anm2path="characters/geburah_tail.anm2" type="none" priority="150" />
+</costumes>
