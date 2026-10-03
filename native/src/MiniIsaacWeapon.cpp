@@ -4,6 +4,7 @@
 #include "libzhl.h"
 #include "lua.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <unordered_map>
 
@@ -11,11 +12,33 @@ namespace {
 struct ProxyState {
     unsigned int seed;
     int lastTick = -1;
-    bool releaseNextTick = false;
+    int releaseFrames = 0;
+    bool wasShooting = false;
+    unsigned int inputReads = 0;
+    unsigned int blockedFireCalls = 0;
+    Vector blockedFireArg{ 0.0f, 0.0f };
+    Vector afterFireDirection{ 0.0f, 0.0f };
 };
 
 std::unordered_map<Entity_Familiar*, ProxyState> proxies;
 bool firingProxy = false;
+ProxyState* inputProxy = nullptr;
+Vector inputDirection{ 0.0f, 0.0f };
+bool inputShooting = false;
+bool inputTriggered = false;
+
+float shootActionValue(int action) {
+    if (!inputProxy || action < 4 || action > 7) return -1.0f;
+    ++inputProxy->inputReads;
+    if (!inputShooting) return 0.0f;
+    switch (action) {
+    case 4: return std::max(0.0f, -inputDirection.x);
+    case 5: return std::max(0.0f, inputDirection.x);
+    case 6: return std::max(0.0f, -inputDirection.y);
+    case 7: return std::max(0.0f, inputDirection.y);
+    default: return 0.0f;
+    }
+}
 
 Entity_Familiar* familiarArg(lua_State* state) {
     return lua::GetLuabridgeUserdata<Entity_Familiar*>(
@@ -38,10 +61,18 @@ bool suppressPlayerFire(Weapon* weapon) {
     return familiar && registered(familiar) && !firingProxy;
 }
 
+bool blockPlayerFire(Weapon* weapon, const Vector& argument) {
+    if (!suppressPlayerFire(weapon)) return false;
+    auto& proxy = proxies.at(weapon->GetOwner()->ToFamiliar());
+    ++proxy.blockedFireCalls;
+    proxy.blockedFireArg = argument;
+    return true;
+}
+
 int registerProxy(lua_State* state) {
     auto* familiar = familiarArg(state);
     if (familiar && familiar->_type == 3 && familiar->_variant == 80) {
-        proxies[familiar] = { familiar->_initSeed, -1, false };
+        proxies[familiar] = { familiar->_initSeed };
         lua_pushboolean(state, 1);
     } else {
         lua_pushboolean(state, 0);
@@ -57,6 +88,33 @@ int unregisterProxy(lua_State* state) {
 int resetProxies(lua_State*) {
     proxies.clear();
     return 0;
+}
+
+int getInputReads(lua_State* state) {
+    auto* familiar = familiarArg(state);
+    lua_pushinteger(state, familiar && registered(familiar)
+        ? proxies.at(familiar).inputReads : 0);
+    return 1;
+}
+
+int isRegistered(lua_State* state) {
+    auto* familiar = familiarArg(state);
+    lua_pushboolean(state, familiar && registered(familiar));
+    return 1;
+}
+
+int diagnostics(lua_State* state) {
+    auto* familiar = familiarArg(state);
+    lua_newtable(state);
+    if (!familiar || !registered(familiar)) return 1;
+    const auto& proxy = proxies.at(familiar);
+    lua_pushinteger(state, proxy.inputReads); lua_setfield(state, -2, "input_reads");
+    lua_pushinteger(state, proxy.blockedFireCalls); lua_setfield(state, -2, "blocked_fire");
+    lua_pushnumber(state, proxy.blockedFireArg.x); lua_setfield(state, -2, "blocked_x");
+    lua_pushnumber(state, proxy.blockedFireArg.y); lua_setfield(state, -2, "blocked_y");
+    lua_pushnumber(state, proxy.afterFireDirection.x); lua_setfield(state, -2, "after_x");
+    lua_pushnumber(state, proxy.afterFireDirection.y); lua_setfield(state, -2, "after_y");
+    return 1;
 }
 
 int tickProxy(lua_State* state) {
@@ -79,23 +137,38 @@ int tickProxy(lua_State* state) {
     auto* weapon = familiar->_weapon;
     const float maxCharge = weapon->GetMaxCharge();
     bool shooting = hasTarget;
+    bool releaseCharge = false;
     if (!hasTarget) {
-        proxy.releaseNextTick = false;
+        proxy.releaseFrames = 0;
     } else if (maxCharge > 0.0f) {
-        if (proxy.releaseNextTick) {
-            proxy.releaseNextTick = false;
-        } else if (*weapon->GetCharge() >= maxCharge) {
+        if (proxy.releaseFrames == 0 && *weapon->GetCharge() >= maxCharge) {
+            proxy.releaseFrames = weapon->GetWeaponType() == WEAPON_BRIMSTONE ? 25 : 2;
+            releaseCharge = true;
+        }
+        if (proxy.releaseFrames > 0) {
+            --proxy.releaseFrames;
             shooting = false;
-            proxy.releaseNextTick = true;
         }
     }
     const float length = std::sqrt(x * x + y * y);
     const Vector direction = hasTarget ? Vector{ x / length, y / length } : Vector{ 0.0f, 0.0f };
     *weapon->GetDirection() = direction;
     const int previousShots = weapon->GetNumFired();
+    inputProxy = &proxy;
+    inputDirection = direction;
+    inputShooting = shooting;
+    inputTriggered = shooting && !proxy.wasShooting;
     firingProxy = true;
     weapon->Fire(direction, shooting, false);
+    proxy.afterFireDirection = *weapon->GetDirection();
+    if (releaseCharge) {
+        inputShooting = true;
+        inputTriggered = true;
+        familiar->Shoot();
+    }
     firingProxy = false;
+    inputProxy = nullptr;
+    proxy.wasShooting = shooting;
     lua_pushboolean(state, weapon->GetNumFired() != previousShots);
     return 1;
 }
@@ -106,23 +179,47 @@ void registerApi(lua_State* state) {
     lua_pushcfunction(state, registerProxy); lua_setfield(state, -2, "RegisterProxy");
     lua_pushcfunction(state, unregisterProxy); lua_setfield(state, -2, "UnregisterProxy");
     lua_pushcfunction(state, resetProxies); lua_setfield(state, -2, "ResetProxies");
+    lua_pushcfunction(state, getInputReads); lua_setfield(state, -2, "GetInputReads");
+    lua_pushcfunction(state, isRegistered); lua_setfield(state, -2, "IsRegistered");
+    lua_pushcfunction(state, diagnostics); lua_setfield(state, -2, "Diagnostics");
     lua_pushcfunction(state, tickProxy); lua_setfield(state, -2, "TickProxy");
     lua_setglobal(state, "AscentionNative");
 }
 }
 
+HOOK_METHOD(Entity_Familiar, Shoot, () -> void) {
+    if (registered(this) && !firingProxy) return;
+    super();
+}
+
+HOOK_METHOD(InputManager, GetActionValue, (int action, int controller, int unknown) -> float) {
+    const float value = shootActionValue(action);
+    return value >= 0.0f ? value : super(action, controller, unknown);
+}
+
+HOOK_METHOD(InputManager, IsActionPressed, (int action, int controller, int unknown) -> bool) {
+    const float value = shootActionValue(action);
+    return value >= 0.0f ? value > 0.01f : super(action, controller, unknown);
+}
+
+HOOK_METHOD(InputManager, IsActionTriggered, (int action, int controller, int unknown) -> bool) {
+    const float value = shootActionValue(action);
+    return value >= 0.0f ? inputTriggered && value > 0.01f
+        : super(action, controller, unknown);
+}
+
 HOOK_METHOD(Weapon, Fire, (const Vector& direction, bool shooting, bool interpolated) -> void) {
-    if (suppressPlayerFire(this)) return;
+    if (blockPlayerFire(this, direction)) return;
     super(direction, shooting, interpolated);
 }
 
 HOOK_METHOD(Weapon_Brimstone, Fire, (const Vector& direction, bool shooting, bool interpolated) -> void) {
-    if (suppressPlayerFire(this)) return;
+    if (blockPlayerFire(this, direction)) return;
     super(direction, shooting, interpolated);
 }
 
 HOOK_METHOD(Weapon_MonstrosLung, Fire, (const Vector& direction, bool shooting, bool interpolated) -> void) {
-    if (suppressPlayerFire(this)) return;
+    if (blockPlayerFire(this, direction)) return;
     super(direction, shooting, interpolated);
 }
 

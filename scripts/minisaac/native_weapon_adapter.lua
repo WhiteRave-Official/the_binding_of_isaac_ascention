@@ -35,6 +35,21 @@ function Adapter.Register(mod)
     mod:AddCallback(ModCallbacks.MC_POST_FAMILIAR_FIRE_PROJECTILE, function(_, tear)
         local proxy = proxyOf(tear.SpawnerEntity or tear.Parent)
         if proxy and firstScale(tear) then
+            local proxyData = proxy:GetData()
+            local samples = proxyData.AscentionMiniIsaacTearSamples or 0
+            if samples < 4 then
+                proxyData.AscentionMiniIsaacTearSamples = samples + 1
+                local owner = proxyData.AscentionMiniIsaacProxyOwner
+                local mini = owner and owner.Ref
+                local aim = mini and mini:Exists()
+                    and mini:GetData().AscentionMiniIsaacAim
+                Isaac.DebugString("[AscentionMiniIsaac] tear velocity="
+                    .. tostring(tear.Velocity.X) .. "," .. tostring(tear.Velocity.Y)
+                    .. " aim=" .. tostring(aim and aim.X) .. ","
+                    .. tostring(aim and aim.Y)
+                    .. " player_velocity=" .. tostring(proxy.Player and proxy.Player.Velocity.X)
+                    .. "," .. tostring(proxy.Player and proxy.Player.Velocity.Y))
+            end
             if proxy.Player then
                 tear.Velocity = tear.Velocity - proxy.Player.Velocity
             end

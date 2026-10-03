@@ -362,6 +362,10 @@ function Combat.Register(mod)
         debugCounts = {}
     end)
     mod:AddCallback(ModCallbacks.MC_POST_TEAR_UPDATE, processTear)
+    mod:AddCallback(ModCallbacks.MC_POST_FAMILIAR_FIRE_PROJECTILE, function(_, tear)
+        local familiar = asMiniIsaac(tear.SpawnerEntity)
+        if familiar and Router.IsManaging(familiar) then tear:Remove() end
+    end, FamiliarVariant.MINISAAC)
     mod:AddCallback(ModCallbacks.MC_FAMILIAR_UPDATE, updateSwordMovement,
         FamiliarVariant.MINISAAC)
     mod:AddCallback(ModCallbacks.MC_PRE_KNIFE_UPDATE, updateSwordHitbox)

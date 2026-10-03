@@ -2,9 +2,10 @@
 
 `scripts/minisaac/incubus_router.lua` now creates one invisible Incubus per
 Mini Isaac when `zhlAscention.dll` is loaded. Its aim is selected independently
-of the player's input. `native/src/MiniIsaacWeapon.cpp` drives the Incubus's
-native `Weapon::Fire` and suppresses normal player-input firing for managed
-proxies. This avoids the timing failure of `MC_INPUT_ACTION`.
+of the player's input. `native/src/MiniIsaacWeapon.cpp` drives the proxy's
+weapon through `Weapon::Fire` and blocks engine-driven `Shoot()` for managed
+proxies. An input override is scoped to this weapon call. It invokes `Shoot()`
+once when a charged attack is released, not every tick.
 
 `scripts/minisaac/combat.lua` remains the fallback route without the DLL. Vanilla Mini
 Isaac AI handles movement; Spirit Sword alone adjusts velocity toward melee
@@ -44,5 +45,6 @@ Build and install on Windows with matching REPENTOGON sources:
 
 The DLL belongs in the active game's `repentogon` directory, not the Workshop
 mod folder. `install-native.ps1 -GameDirectory <path>` supports another game
-location. Compilation does not prove charged weapons work with direct `Fire`;
-test idle-player firing, all charged synergies, co-op, and room transitions in game.
+location. Compilation does not prove all synergies work; test idle-player
+firing, charged releases, co-op, and room transitions in game. Brimstone keeps
+the shoot button released for 25 ticks after a full charge so its beam can finish.

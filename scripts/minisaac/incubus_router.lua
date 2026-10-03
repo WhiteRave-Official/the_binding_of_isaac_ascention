@@ -45,7 +45,10 @@ end
 
 local function ensureProxy(mini)
     local proxy = proxyOf(mini)
-    if proxy then return proxy end
+    if proxy then
+        if not native.IsRegistered(proxy) then native.RegisterProxy(proxy) end
+        return proxy
+    end
     proxy = Isaac.Spawn(EntityType.ENTITY_FAMILIAR, FamiliarVariant.INCUBUS,
         0, mini.Position, Vector.Zero, mini.Player):ToFamiliar()
     proxy.Player = mini.Player
@@ -145,6 +148,25 @@ function Router.Register(mod)
         mini:GetData().AscentionMiniIsaacAim = target and aim or nil
         local fired = native.TickProxy(proxy, aim.X, aim.Y, target ~= nil)
         local weapon = proxy:GetWeapon()
+        if target and weapon and Game():GetFrameCount() % 100 == 0 then
+            local data = mini:GetData()
+            local kind = weapon:GetWeaponType()
+            local samples = data.AscentionMiniIsaacDirectionSamples or {}
+            data.AscentionMiniIsaacDirectionSamples = samples
+            local count = samples[kind] or 0
+            if count < 4 then
+                samples[kind] = count + 1
+                local state = native.Diagnostics(proxy)
+                Isaac.DebugString("[AscentionMiniIsaac] direction weapon="
+                    .. tostring(kind) .. " aim=" .. tostring(aim.X) .. "," .. tostring(aim.Y)
+                    .. " after=" .. tostring(state.after_x) .. "," .. tostring(state.after_y)
+                    .. " blocked=" .. tostring(state.blocked_fire)
+                    .. " blocked_arg=" .. tostring(state.blocked_x) .. ","
+                    .. tostring(state.blocked_y)
+                    .. " input_reads=" .. tostring(state.input_reads)
+                    .. " charge=" .. tostring(weapon:GetCharge()))
+            end
+        end
         if target and weapon and weapon:GetMaxCharge() > 0 then
             local data = mini:GetData()
             local kind = weapon:GetWeaponType()
@@ -157,7 +179,8 @@ function Router.Register(mod)
                     .. " current=" .. tostring(weapon:GetCharge())
                     .. " max=" .. tostring(weapon:GetMaxCharge())
                     .. " delay=" .. tostring(weapon:GetFireDelay())
-                    .. " fired=" .. tostring(weapon:GetNumFired()))
+                    .. " fired=" .. tostring(weapon:GetNumFired())
+                    .. " input_reads=" .. tostring(native.GetInputReads(proxy)))
             end
         end
         if fired then
