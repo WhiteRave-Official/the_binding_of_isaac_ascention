@@ -135,7 +135,69 @@ function Router.Register(mod)
         proxy.Position = mini.Position
         proxy.Velocity = Vector.Zero
         local weapon = proxy:GetWeapon()
-        if weapon and weapon:GetWeaponType() == WeaponType.WEAPON_TECH_X then
+        local kind = weapon and weapon:GetWeaponType()
+        if kind == WeaponType.WEAPON_KNIFE then
+            local mainEntity = weapon:GetMainEntity()
+            local knife = mainEntity and mainEntity:ToKnife()
+            if not knife then return end
+
+            local data = mini:GetData()
+            local proxyData = proxy:GetData()
+            if not proxyData.AscentionMiniIsaacKnifeInitialized then
+                proxyData.AscentionMiniIsaacKnifeInitialized = true
+                knife:Reset()
+            end
+            local stateSamples = proxyData.AscentionMiniIsaacKnifeStateSamples or 0
+            if stateSamples < 8 and Game():GetFrameCount() % 30 == 0 then
+                proxyData.AscentionMiniIsaacKnifeStateSamples = stateSamples + 1
+                Isaac.DebugString("[AscentionMiniIsaac] knife_state frame="
+                    .. tostring(Game():GetFrameCount())
+                    .. " mini=" .. tostring(mini.InitSeed)
+                    .. " flying=" .. tostring(knife:IsFlying())
+                    .. " weapon_charge=" .. tostring(weapon:GetCharge())
+                    .. " knife_charge=" .. tostring(knife.Charge)
+                    .. " launch_frame=" .. tostring(proxyData.AscentionMiniIsaacKnifeFlightFrame)
+                    .. " target=" .. tostring(targetFor(mini) ~= nil))
+            end
+            if knife:IsFlying() then
+                local launchFrame = proxyData.AscentionMiniIsaacKnifeFlightFrame
+                if not launchFrame then
+                    knife:Reset()
+                    if knife:IsFlying() then return true end
+                elseif Game():GetFrameCount() - launchFrame > 90 then
+                    knife:Reset()
+                    proxyData.AscentionMiniIsaacKnifeFlightFrame = nil
+                end
+                if knife:IsFlying() then return end
+            end
+
+            local target = targetFor(mini)
+            local aim = target and (target.Position - mini.Position) or Vector.Zero
+            data.AscentionMiniIsaacAim = target and aim or nil
+            local charge = target and (proxyData.AscentionMiniIsaacKnifeCharge or 0) + 1 or 0
+            proxyData.AscentionMiniIsaacKnifeCharge = charge
+            if target and charge >= math.max(1, math.ceil(weapon:GetMaxCharge())) then
+                proxyData.AscentionMiniIsaacKnifeCharge = 0
+                knife.Position = mini.Position
+                knife.Rotation = aim:GetAngleDegrees()
+                knife:Shoot(1.0, math.max(40, mini.Player.TearRange))
+                proxyData.AscentionMiniIsaacKnifeFlightFrame = Game():GetFrameCount()
+                data.AscentionMiniIsaacLastShotFrame = Game():GetFrameCount()
+                data.AscentionMiniIsaacLastShotVelocity = aim
+                local samples = data.AscentionMiniIsaacKnifeReleases or 0
+                if samples < 4 then
+                    data.AscentionMiniIsaacKnifeReleases = samples + 1
+                    Isaac.DebugString("[AscentionMiniIsaac] knife_release frame="
+                        .. tostring(Game():GetFrameCount())
+                        .. " weapon_charge=" .. tostring(weapon:GetCharge())
+                        .. " knife_charge=" .. tostring(knife and knife.Charge or "none")
+                        .. " flying=" .. tostring(knife and knife:IsFlying() or false)
+                        .. " max_distance=" .. tostring(knife and knife.MaxDistance or "none"))
+                end
+            end
+            return true
+        end
+        if kind == WeaponType.WEAPON_TECH_X then
             local target = targetFor(mini)
             local aim = target and (target.Position - mini.Position) or Vector.Zero
             local data = mini:GetData()
@@ -159,13 +221,19 @@ function Router.Register(mod)
                     .. " native_rings=" .. tostring(state.release_tech_x))
             end
             local chargeSamples = data.AscentionMiniIsaacTechXChargeSamples or 0
-            if target and chargeSamples < 8 and Game():GetFrameCount() % 90 == 0 then
+            if target and chargeSamples < 8 and Game():GetFrameCount() % 45 == 0 then
                 data.AscentionMiniIsaacTechXChargeSamples = chargeSamples + 1
-                Isaac.DebugString("[AscentionMiniIsaac] tech_x_charge frame="
+                local state = native.Diagnostics(proxy)
+                Isaac.DebugString("[AscentionMiniIsaac] charged_weapon frame="
                     .. tostring(Game():GetFrameCount())
                     .. " mini=" .. tostring(mini.InitSeed)
+                    .. " weapon=" .. tostring(kind)
                     .. " charge=" .. tostring(weapon:GetCharge())
-                    .. " max=" .. tostring(weapon:GetMaxCharge()))
+                    .. " max=" .. tostring(weapon:GetMaxCharge())
+                    .. " fired=" .. tostring(weapon:GetNumFired())
+                    .. " fire_delay=" .. tostring(weapon:GetFireDelay())
+                    .. " knives=" .. tostring(state.knives)
+                    .. " releases=" .. tostring(state.releases))
             end
             return true
         end
@@ -181,6 +249,8 @@ function Router.Register(mod)
         local target = targetFor(mini)
         local aim = target and (target.Position - mini.Position) or Vector.Zero
         mini:GetData().AscentionMiniIsaacAim = target and aim or nil
+        local weapon = proxy:GetWeapon()
+        if weapon and weapon:GetWeaponType() == WeaponType.WEAPON_KNIFE then return end
         local fired, techXRelease = native.TickProxy(proxy, aim.X, aim.Y, target ~= nil)
         if techXRelease then
             local data = mini:GetData()
@@ -198,7 +268,6 @@ function Router.Register(mod)
                     .. " native_rings=" .. tostring(state.release_tech_x))
             end
         end
-        local weapon = proxy:GetWeapon()
         if target and weapon and Game():GetFrameCount() % 100 == 0 then
             local data = mini:GetData()
             local kind = weapon:GetWeaponType()

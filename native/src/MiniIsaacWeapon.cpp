@@ -168,13 +168,18 @@ int tickProxy(lua_State* state) {
 
     auto* weapon = familiar->_weapon;
     const float maxCharge = weapon->GetMaxCharge();
+    const bool knifeWeapon = weapon->GetWeaponType() == WEAPON_KNIFE;
     bool shooting = hasTarget;
     bool releaseCharge = false;
     if (!hasTarget) {
         proxy.releaseFrames = 0;
+        if (knifeWeapon) *weapon->GetCharge() = 0.0f;
     } else if (maxCharge > 0.0f) {
+        if (knifeWeapon && proxy.releaseFrames == 0) {
+            *weapon->GetCharge() = std::min(maxCharge, *weapon->GetCharge() + 1.0f);
+        }
         if (proxy.releaseFrames == 0 && *weapon->GetCharge() >= maxCharge) {
-            proxy.releaseFrames = weapon->GetWeaponType() == WEAPON_BRIMSTONE ? 25 : 2;
+            proxy.releaseFrames = weapon->GetWeaponType() == WEAPON_BRIMSTONE ? 25 : knifeWeapon ? 1 : 2;
             releaseCharge = true;
         }
         if (proxy.releaseFrames > 0) {
@@ -193,7 +198,7 @@ int tickProxy(lua_State* state) {
     inputShooting = shooting;
     inputTriggered = shooting && !proxy.wasShooting;
     firingProxy = true;
-    weapon->Fire(direction, shooting, false);
+    if (!knifeWeapon) weapon->Fire(direction, shooting, false);
     proxy.afterFireDirection = *weapon->GetDirection();
     if (releaseCharge) {
         ++proxy.releases;
@@ -208,15 +213,20 @@ int tickProxy(lua_State* state) {
             proxy.releaseFireSameFrame = proxy.blockedFireFrame == g_Game->_frameCount;
             proxy.releaseFireArg = proxy.blockedFireArg;
         }
-        inputShooting = true;
-        inputTriggered = true;
-        familiar->Shoot();
+        if (knifeWeapon) {
+            *weapon->GetCharge() = 0.0f;
+        } else {
+            inputShooting = true;
+            inputTriggered = true;
+            familiar->Shoot();
+        }
         if (techXOwner) proxy.releaseTechXCalls = proxy.techXCalls - previousTechX;
     }
     firingProxy = false;
     inputProxy = nullptr;
     proxy.wasShooting = shooting;
-    lua_pushboolean(state, weapon->GetNumFired() != previousShots);
+    lua_pushboolean(state, releaseCharge && knifeWeapon
+        || weapon->GetNumFired() != previousShots);
     lua_pushboolean(state, releaseCharge && weapon->GetWeaponType() == WEAPON_TECH_X);
     return 2;
 }
