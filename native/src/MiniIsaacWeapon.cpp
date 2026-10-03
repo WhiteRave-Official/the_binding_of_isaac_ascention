@@ -18,6 +18,12 @@ struct ProxyState {
     unsigned int blockedFireCalls = 0;
     Vector blockedFireArg{ 0.0f, 0.0f };
     Vector afterFireDirection{ 0.0f, 0.0f };
+    unsigned int releases = 0;
+    unsigned int projectileCalls = 0;
+    unsigned int brimstoneCalls = 0;
+    unsigned int techLaserCalls = 0;
+    unsigned int techXCalls = 0;
+    unsigned int knifeCalls = 0;
 };
 
 std::unordered_map<Entity_Familiar*, ProxyState> proxies;
@@ -114,6 +120,12 @@ int diagnostics(lua_State* state) {
     lua_pushnumber(state, proxy.blockedFireArg.y); lua_setfield(state, -2, "blocked_y");
     lua_pushnumber(state, proxy.afterFireDirection.x); lua_setfield(state, -2, "after_x");
     lua_pushnumber(state, proxy.afterFireDirection.y); lua_setfield(state, -2, "after_y");
+    lua_pushinteger(state, proxy.releases); lua_setfield(state, -2, "releases");
+    lua_pushinteger(state, proxy.projectileCalls); lua_setfield(state, -2, "projectiles");
+    lua_pushinteger(state, proxy.brimstoneCalls); lua_setfield(state, -2, "brimstones");
+    lua_pushinteger(state, proxy.techLaserCalls); lua_setfield(state, -2, "tech_lasers");
+    lua_pushinteger(state, proxy.techXCalls); lua_setfield(state, -2, "tech_x");
+    lua_pushinteger(state, proxy.knifeCalls); lua_setfield(state, -2, "knives");
     return 1;
 }
 
@@ -162,6 +174,7 @@ int tickProxy(lua_State* state) {
     weapon->Fire(direction, shooting, false);
     proxy.afterFireDirection = *weapon->GetDirection();
     if (releaseCharge) {
+        ++proxy.releases;
         inputShooting = true;
         inputTriggered = true;
         familiar->Shoot();
@@ -190,6 +203,51 @@ void registerApi(lua_State* state) {
 HOOK_METHOD(Entity_Familiar, Shoot, () -> void) {
     if (registered(this) && !firingProxy) return;
     super();
+}
+
+HOOK_METHOD(Entity_Familiar, FireProjectile, (const Vector& aimDirection, bool unknown) -> Entity_Tear*) {
+    if (registered(this) && firingProxy && inputDirection.x * inputDirection.x
+            + inputDirection.y * inputDirection.y > 0.001f) {
+        ++proxies.at(this).projectileCalls;
+        return super(inputDirection, unknown);
+    }
+    return super(aimDirection, unknown);
+}
+
+HOOK_METHOD(Entity_Familiar, FireBrimstone, (const Vector& aimDirection, bool unknown) -> Entity_Laser*) {
+    if (registered(this) && firingProxy && inputDirection.x * inputDirection.x
+            + inputDirection.y * inputDirection.y > 0.001f) {
+        ++proxies.at(this).brimstoneCalls;
+        return super(inputDirection, unknown);
+    }
+    return super(aimDirection, unknown);
+}
+
+HOOK_METHOD(Entity_Familiar, FireTechLaser, (const Vector& aimDirection) -> Entity_Laser*) {
+    if (registered(this) && firingProxy && inputDirection.x * inputDirection.x
+            + inputDirection.y * inputDirection.y > 0.001f) {
+        ++proxies.at(this).techLaserCalls;
+        return super(inputDirection);
+    }
+    return super(aimDirection);
+}
+
+HOOK_METHOD(Entity_Player, FireTechXLaser, (const Vector& position, const Vector& direction,
+        float radius, Entity* source, float damageMultiplier) -> Entity_Laser*) {
+    if (firingProxy && inputProxy && inputDirection.x * inputDirection.x
+            + inputDirection.y * inputDirection.y > 0.001f) {
+        ++inputProxy->techXCalls;
+        const float speed = std::sqrt(direction.x * direction.x + direction.y * direction.y);
+        const Vector aimedVelocity{ inputDirection.x * speed, inputDirection.y * speed };
+        return super(position, aimedVelocity, radius, source, damageMultiplier);
+    }
+    return super(position, direction, radius, source, damageMultiplier);
+}
+
+HOOK_METHOD(Entity_Player, FireKnife, (Entity* parent, unsigned int variant, float rotationOffset,
+        bool cantOverwrite, unsigned int subType) -> Entity_Knife*) {
+    if (firingProxy && inputProxy) ++inputProxy->knifeCalls;
+    return super(parent, variant, rotationOffset, cantOverwrite, subType);
 }
 
 HOOK_METHOD(InputManager, GetActionValue, (int action, int controller, int unknown) -> float) {

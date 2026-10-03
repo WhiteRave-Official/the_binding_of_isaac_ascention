@@ -175,12 +175,18 @@ function Router.Register(mod)
             local count = samples[kind] or 0
             if count < 3 and Game():GetFrameCount() % 90 == 0 then
                 samples[kind] = count + 1
+                local state = native.Diagnostics(proxy)
                 Isaac.DebugString("[AscentionMiniIsaac] charge weapon=" .. tostring(kind)
                     .. " current=" .. tostring(weapon:GetCharge())
                     .. " max=" .. tostring(weapon:GetMaxCharge())
                     .. " delay=" .. tostring(weapon:GetFireDelay())
                     .. " fired=" .. tostring(weapon:GetNumFired())
-                    .. " input_reads=" .. tostring(native.GetInputReads(proxy)))
+                    .. " releases=" .. tostring(state.releases)
+                    .. " projectiles=" .. tostring(state.projectiles)
+                    .. " brimstones=" .. tostring(state.brimstones)
+                    .. " tech_lasers=" .. tostring(state.tech_lasers)
+                    .. " tech_x=" .. tostring(state.tech_x)
+                    .. " knives=" .. tostring(state.knives))
             end
         end
         if fired then

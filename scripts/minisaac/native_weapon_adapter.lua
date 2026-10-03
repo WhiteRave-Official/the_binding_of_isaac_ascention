@@ -51,7 +51,7 @@ function Adapter.Register(mod)
                     .. "," .. tostring(proxy.Player and proxy.Player.Velocity.Y))
             end
             if proxy.Player then
-                tear.Velocity = tear.Velocity - proxy.Player.Velocity
+                tear.Velocity = tear.Velocity - proxy.Player.Velocity * 1.2
             end
             tear.CollisionDamage = tear.CollisionDamage * correction(proxy)
             tear.Scale = tear.Scale * TEAR_SCALE
