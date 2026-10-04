@@ -1,9 +1,19 @@
 local Router = {}
+local Formation = include("scripts.minisaac.formation")
 
 local PROXY_KEY = "AscentionMiniIsaacWeaponProxy"
 local OWNER_KEY = "AscentionMiniIsaacProxyOwner"
 local TARGET_REFRESH_INTERVAL = 6
 local native = AscentionNative
+local LOKIS_HORNS = CollectibleType.COLLECTIBLE_LOKIS_HORNS or 87
+
+local KNIFE_DIRECTIONS = {
+    Direction.DOWN,
+    Direction.RIGHT,
+    Direction.UP,
+    Direction.LEFT,
+}
+local HIDDEN_KNIFE_COLOR = Color(1, 1, 1, 0, 0, 0, 0)
 
 local HELD_KNIFE_OFFSETS = {
     [Direction.DOWN] = Vector(0, 8),
@@ -65,6 +75,31 @@ local function renderHeldKnife(knife, mini, direction)
         + HELD_KNIFE_OFFSETS[direction])
 end
 
+local function setNativeKnifeVisible(knife, visible)
+    local data = knife:GetData()
+    local sprite = knife:GetSprite()
+    if visible then
+        if data.AscentionMiniIsaacNativeKnifeColor then
+            sprite.Color = data.AscentionMiniIsaacNativeKnifeColor
+            data.AscentionMiniIsaacNativeKnifeColor = nil
+        end
+        if data.AscentionMiniIsaacNativeEntityColor then
+            knife.Color = data.AscentionMiniIsaacNativeEntityColor
+            data.AscentionMiniIsaacNativeEntityColor = nil
+        end
+    else
+        if not data.AscentionMiniIsaacNativeKnifeColor then
+            data.AscentionMiniIsaacNativeKnifeColor = sprite.Color
+        end
+        if not data.AscentionMiniIsaacNativeEntityColor then
+            data.AscentionMiniIsaacNativeEntityColor = knife.Color
+        end
+        sprite.Color = HIDDEN_KNIFE_COLOR
+        knife.Color = HIDDEN_KNIFE_COLOR
+    end
+    knife.Visible = visible
+end
+
 local function active()
     return native and native.abi == 1
         and type(DynamicMinisaacContinued) ~= "table"
@@ -88,15 +123,88 @@ local function ownerOf(proxy)
     return validMini(owner) and owner:ToFamiliar() or nil
 end
 
+local function lokiKnifeOwner(knife)
+    local function ownerFrom(parent)
+        if parent and parent:Exists() and parent:GetData()[PROXY_KEY] then
+            local familiar = parent:ToFamiliar()
+            local weapon = familiar and familiar:GetWeapon()
+            local mainEntity = weapon and weapon:GetMainEntity()
+            if not mainEntity or mainEntity.InitSeed == knife.InitSeed then return nil end
+            local mini = ownerOf(parent)
+            if mini and mini.Player and mini.Player:HasCollectible(LOKIS_HORNS) then
+                return mini
+            end
+        end
+    end
+    return ownerFrom(knife.Parent) or ownerFrom(knife.SpawnerEntity)
+end
+
 local function proxyOf(mini)
     local pointer = mini:GetData().AscentionMiniIsaacProxy
     local proxy = pointer and pointer.Ref
     return proxy and proxy:Exists() and proxy:ToFamiliar() or nil
 end
 
+local function removeExtraKnives(proxy)
+    local data = proxy:GetData()
+    local extras = data.AscentionMiniIsaacExtraKnives
+    if not extras then return end
+    for _, pointer in pairs(extras) do
+        local knife = pointer and pointer.Ref
+        if knife and knife:Exists() then knife:Remove() end
+    end
+    data.AscentionMiniIsaacExtraKnives = nil
+end
+
+local function extraKnife(proxy, mini, mainKnife, index)
+    local data = proxy:GetData()
+    local extras = data.AscentionMiniIsaacExtraKnives or {}
+    data.AscentionMiniIsaacExtraKnives = extras
+    local entity = extras[index] and extras[index].Ref
+    local knife = entity and entity:Exists() and entity:ToKnife()
+    if not knife then
+        knife = mini.Player:FireKnife(proxy, 0, true, mainKnife.SubType, mainKnife.Variant)
+        if not knife then return nil end
+        extras[index] = EntityPtr(knife)
+        knife:GetData().AscentionMiniIsaacRenderOwner = EntityPtr(mini)
+    end
+    return knife
+end
+
+local function fireKnifeVolley(proxy, mini, mainKnife, aim)
+    local shots = Formation.Build(mini.Player, WeaponType.WEAPON_KNIFE, aim:Normalized())
+    local extras = proxy:GetData().AscentionMiniIsaacExtraKnives
+    if extras then
+        for index, pointer in pairs(extras) do
+            if index >= #shots then
+                local entity = pointer and pointer.Ref
+                if entity and entity:Exists() then entity:Remove() end
+                extras[index] = nil
+            end
+        end
+    end
+
+    for index, shot in ipairs(shots) do
+        local knife = index == 1 and mainKnife or extraKnife(proxy, mini, mainKnife, index - 1)
+        if knife then
+            if knife:IsFlying() then knife:Reset() end
+            knife.Position = mini.Position + shot.offset
+            knife.Rotation = shot.velocity:GetAngleDegrees()
+            if index > 1 then
+                knife.CollisionDamage = mainKnife.CollisionDamage
+                knife.Scale = mainKnife.Scale
+                knife.SpriteScale = mainKnife.SpriteScale
+            end
+            setNativeKnifeVisible(knife, true)
+            knife:Shoot(1.0, math.max(40, mini.Player.TearRange))
+        end
+    end
+end
+
 local function removeProxy(mini)
     local proxy = proxyOf(mini)
     if proxy then
+        removeExtraKnives(proxy)
         native.UnregisterProxy(proxy)
         proxy:Remove()
     end
@@ -108,6 +216,18 @@ local function ensureProxy(mini)
     if proxy then
         if not native.IsRegistered(proxy) then native.RegisterProxy(proxy) end
         return proxy
+    end
+    for _, entity in ipairs(Isaac.FindByType(EntityType.ENTITY_FAMILIAR,
+        FamiliarVariant.INCUBUS)) do
+        local existing = entity:ToFamiliar()
+        local owner = existing and existing:GetData()[OWNER_KEY]
+        local ownerEntity = owner and owner.Ref
+        if existing and existing:Exists() and existing:GetData()[PROXY_KEY]
+            and ownerEntity and ownerEntity.InitSeed == mini.InitSeed then
+            mini:GetData().AscentionMiniIsaacProxy = EntityPtr(existing)
+            if not native.IsRegistered(existing) then native.RegisterProxy(existing) end
+            return existing
+        end
     end
     proxy = Isaac.Spawn(EntityType.ENTITY_FAMILIAR, FamiliarVariant.INCUBUS,
         0, mini.Position, Vector.Zero, mini.Player):ToFamiliar()
@@ -172,9 +292,30 @@ function Router.Register(mod)
         return
     end
 
+    local function clearProxies()
+        for _, entity in ipairs(Isaac.FindByType(EntityType.ENTITY_FAMILIAR,
+            FamiliarVariant.INCUBUS)) do
+            local proxy = entity:ToFamiliar()
+            if proxy and (proxy:GetData()[PROXY_KEY] or native.IsRegistered(proxy)) then
+                Isaac.DebugString("[AscentionMiniIsaac] proxy_cleanup seed="
+                    .. tostring(proxy.InitSeed))
+                removeExtraKnives(proxy)
+                native.UnregisterProxy(proxy)
+                proxy:Remove()
+            end
+        end
+        for _, entity in ipairs(Isaac.FindByType(EntityType.ENTITY_FAMILIAR,
+            FamiliarVariant.MINISAAC)) do
+            entity:GetData().AscentionMiniIsaacProxy = nil
+        end
+    end
+
     mod:AddCallback(ModCallbacks.MC_POST_GAME_STARTED, function()
+        clearProxies()
         native.ResetProxies()
     end)
+
+    mod:AddCallback(ModCallbacks.MC_PRE_GAME_EXIT, clearProxies)
 
     mod:AddCallback(ModCallbacks.MC_FAMILIAR_UPDATE, function(_, mini)
         if not Router.IsManaging(mini) then
@@ -208,6 +349,7 @@ function Router.Register(mod)
         if not Router.IsProxy(proxy) then return end
         local mini = ownerOf(proxy)
         if not active() or not mini or not mini.Player then
+            removeExtraKnives(proxy)
             native.UnregisterProxy(proxy)
             proxy:Remove()
             return true
@@ -223,6 +365,7 @@ function Router.Register(mod)
             local knifeData = knife:GetData()
             if not knifeData.AscentionMiniIsaacRenderOwner then
                 knifeData.AscentionMiniIsaacRenderOwner = EntityPtr(mini)
+
                 mini:GetData().AscentionMiniIsaacHeldKnife = EntityPtr(knife)
                 Isaac.DebugString("[AscentionMiniIsaac] knife_render_bind knife="
                     .. tostring(knife.InitSeed) .. " mini=" .. tostring(mini.InitSeed)
@@ -254,15 +397,14 @@ function Router.Register(mod)
             proxyData.AscentionMiniIsaacKnifeCharge = charge
             if target and charge >= math.max(1, math.ceil(weapon:GetMaxCharge())) then
                 proxyData.AscentionMiniIsaacKnifeCharge = 0
-                knife.Position = mini.Position
-                knife.Rotation = aim:GetAngleDegrees()
-                knife:Shoot(1.0, math.max(40, mini.Player.TearRange))
+                fireKnifeVolley(proxy, mini, knife, aim)
                 proxyData.AscentionMiniIsaacKnifeFlightFrame = Game():GetFrameCount()
                 data.AscentionMiniIsaacLastShotFrame = Game():GetFrameCount()
                 data.AscentionMiniIsaacLastShotVelocity = aim
             end
             return true
         end
+        removeExtraKnives(proxy)
         if kind == WeaponType.WEAPON_TECH_X then
             local target = targetFor(mini)
             local aim = target and (target.Position - mini.Position) or Vector.Zero
@@ -395,11 +537,27 @@ function Router.Register(mod)
     end, FamiliarVariant.INCUBUS)
 
     mod:AddCallback(ModCallbacks.MC_PRE_KNIFE_RENDER, function(_, knife)
-        local data = knife:GetData()
-        local owner = data.AscentionMiniIsaacRenderOwner
+        local owner = knife:GetData().AscentionMiniIsaacRenderOwner
+        if not owner and lokiKnifeOwner(knife) then return false end
         local mini = owner and owner.Ref
-        if not mini or not mini:Exists() or knife:IsFlying() then return end
+        if not validMini(mini) or knife:IsFlying() then return end
+        setNativeKnifeVisible(knife, false)
         return false
+    end)
+
+    mod:AddCallback(ModCallbacks.MC_POST_KNIFE_UPDATE, function(_, knife)
+        local owner = knife:GetData().AscentionMiniIsaacRenderOwner
+        if not owner and lokiKnifeOwner(knife) then
+            knife:Remove()
+            return
+        end
+        if not owner then return end
+        local mini = owner.Ref
+        if not validMini(mini) then
+            setNativeKnifeVisible(knife, true)
+            return
+        end
+        setNativeKnifeVisible(knife, knife:IsFlying())
     end)
 
     mod:AddCallback(ModCallbacks.MC_PRE_FAMILIAR_RENDER, function(_, mini)
@@ -408,7 +566,15 @@ function Router.Register(mod)
         local entity = pointer and pointer.Ref
         local knife = entity and entity:Exists() and entity:ToKnife()
         if knife and not knife:IsFlying() then
-            renderHeldKnife(knife, mini, knifeFacing(mini))
+            local facing = knifeFacing(mini)
+            renderHeldKnife(knife, mini, facing)
+            if mini.Player and mini.Player:HasCollectible(LOKIS_HORNS) then
+                for _, direction in ipairs(KNIFE_DIRECTIONS) do
+                    if direction ~= facing then
+                        renderHeldKnife(knife, mini, direction)
+                    end
+                end
+            end
         end
     end, FamiliarVariant.MINISAAC)
 
