@@ -63,6 +63,9 @@ function Adapter.Register(mod)
         tear.Position = proxy.Position + (tear.Position - proxy.Position):Rotated(angle)
         tear.Scale = tear.Scale * TEAR_SCALE
         data.AscentionMiniIsaacNativeAimed = true
+        if mini and mini:Exists() then
+            mini:GetData().AscentionMiniIsaacTearShotFrame = frame
+        end
         if redirectedSamples < 6 then
             redirectedSamples = redirectedSamples + 1
             Isaac.DebugString("[AscentionMiniIsaac] tear_redirect seed="

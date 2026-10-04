@@ -381,6 +381,23 @@ function Router.Register(mod)
         else
             data.AscentionMiniIsaacHeldKnife = nil
         end
+        if weapon and weapon:GetWeaponType() == WeaponType.WEAPON_TEARS then
+            local shotFrame = data.AscentionMiniIsaacTearShotFrame
+            if shotFrame then
+                local elapsed = Game():GetFrameCount() - shotFrame
+                local direction = knifeFacing(mini)
+                local suffix = direction == Direction.UP and "Up"
+                    or direction == Direction.LEFT and "Left"
+                    or direction == Direction.RIGHT and "Right" or "Down"
+                local sprite = mini:GetSprite()
+                if elapsed < 2 then
+                    sprite:SetOverlayFrame("Head" .. suffix, 1)
+                else
+                    sprite:SetOverlayFrame("Head" .. suffix, 0)
+                    data.AscentionMiniIsaacTearShotFrame = nil
+                end
+            end
+        end
     end, FamiliarVariant.MINISAAC)
 
     mod:AddCallback(ModCallbacks.MC_PRE_FAMILIAR_UPDATE, function(_, proxy)
