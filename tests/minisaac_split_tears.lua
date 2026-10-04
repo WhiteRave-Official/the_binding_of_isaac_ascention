@@ -38,6 +38,9 @@ child.Position = Vector(20, 30)
 child.Velocity = Vector(8, 0)
 child.Scale = 0.48
 child.data.AscentionMiniIsaacNativeAimed = true
+proxy.data.AscentionMiniIsaacTearSourceFrame = 42
+proxy.data.AscentionMiniIsaacTearSource = Vector(8, 0)
+proxy.data.AscentionMiniIsaacTearSourceSeed = child.InitSeed
 callbacks[ModCallbacks.MC_POST_FIRE_SPLIT_TEAR](nil, child, source)
 assert(child.Position.X == 100 and child.Position.Y == 120)
 assert(child.Velocity.X == 4 and child.Velocity.Y == 2)
@@ -45,6 +48,8 @@ assert(child.Scale == 0.8)
 assert(child.data.AscentionMiniIsaacSplitChild)
 assert(child.data.AscentionMiniIsaacNativeScaled)
 assert(not child.data.AscentionMiniIsaacNativeAimed)
+assert(not proxy.data.AscentionMiniIsaacTearSourceFrame)
+assert(not proxy.data.AscentionMiniIsaacTearSource)
 
 local inherited = entity(4, 10, 10, false, true)
 inherited.SpawnerEntity = source

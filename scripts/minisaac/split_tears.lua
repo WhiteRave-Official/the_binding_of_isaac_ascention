@@ -45,6 +45,15 @@ function SplitTears.Register(mod)
         data.AscentionMiniIsaacNativeScaled = true
         data[CHILD_KEY] = true
         data[SNAPSHOT_KEY] = nil
+        local proxy = child.SpawnerEntity
+        if isProxy(proxy) then
+            local proxyData = proxy:GetData()
+            if proxyData.AscentionMiniIsaacTearSourceSeed == child.InitSeed then
+                proxyData.AscentionMiniIsaacTearSourceFrame = nil
+                proxyData.AscentionMiniIsaacTearSource = nil
+                proxyData.AscentionMiniIsaacTearSourceSeed = nil
+            end
+        end
         if correctedSamples < 6 then
             correctedSamples = correctedSamples + 1
             Isaac.DebugString("[AscentionMiniIsaac] split_restore child="

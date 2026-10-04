@@ -361,6 +361,10 @@ function Combat.Register(mod)
     mod:AddCallback(ModCallbacks.MC_POST_GAME_STARTED, function()
         debugCounts = {}
     end)
+    mod:AddCallback(ModCallbacks.MC_POST_TEAR_INIT, function(_, tear)
+        local familiar = asMiniIsaac(tear.SpawnerEntity)
+        if familiar and Router.IsManaging(familiar) then tear:Remove() end
+    end)
     mod:AddCallback(ModCallbacks.MC_POST_TEAR_UPDATE, processTear)
     mod:AddCallback(ModCallbacks.MC_POST_FAMILIAR_FIRE_PROJECTILE, function(_, tear)
         local familiar = asMiniIsaac(tear.SpawnerEntity)

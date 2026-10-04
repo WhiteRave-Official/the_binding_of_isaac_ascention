@@ -39,7 +39,7 @@ end
 
 function Adapter.Register(mod)
     local redirectedSamples = 0
-    local function redirectTear(tear, proxy)
+    local function redirectTear(tear, proxy, stage)
         local data = tear:GetData()
         if data.AscentionMiniIsaacNativeAimed or data.AscentionMiniIsaacSplitChild then return end
         local player = proxy.Player
@@ -55,6 +55,7 @@ function Adapter.Register(mod)
         if proxyData.AscentionMiniIsaacTearSourceFrame ~= frame then
             proxyData.AscentionMiniIsaacTearSourceFrame = frame
             proxyData.AscentionMiniIsaacTearSource = velocity
+            proxyData.AscentionMiniIsaacTearSourceSeed = tear.InitSeed
         end
         local source = proxyData.AscentionMiniIsaacTearSource
         local angle = aim:GetAngleDegrees() - source:GetAngleDegrees()
@@ -66,6 +67,7 @@ function Adapter.Register(mod)
             redirectedSamples = redirectedSamples + 1
             Isaac.DebugString("[AscentionMiniIsaac] tear_redirect seed="
                 .. tostring(tear.InitSeed) .. " proxy=" .. tostring(proxy.InitSeed)
+                .. " stage=" .. tostring(stage)
                 .. " angle=" .. tostring(angle)
                 .. " velocity=" .. tostring(tear.Velocity.X) .. ","
                 .. tostring(tear.Velocity.Y))
@@ -76,7 +78,15 @@ function Adapter.Register(mod)
         -- Regular Incubus tears bypass Familiar::FireProjectile but retain its
         -- SpawnerEntity. Aim and visual scale must be set before first render.
         local proxy = directProxy(tear.SpawnerEntity)
-        if proxy then redirectTear(tear, proxy) end
+        if proxy then redirectTear(tear, proxy, "init") end
+    end)
+
+    mod:AddCallback(ModCallbacks.MC_PRE_TEAR_UPDATE, function(_, tear)
+        if tear.FrameCount > 1 then return end
+        local proxy = directProxy(tear.SpawnerEntity)
+        if proxy and not tear:GetData().AscentionMiniIsaacNativeAimed then
+            redirectTear(tear, proxy, "pre_update")
+        end
     end)
 
     mod:AddCallback(ModCallbacks.MC_POST_TEAR_UPDATE, function(_, tear)
@@ -84,7 +94,7 @@ function Adapter.Register(mod)
         local proxy = directProxy(tear.SpawnerEntity)
         local player = tear.Parent and tear.Parent:ToPlayer()
         if not proxy or not player then return end
-        redirectTear(tear, proxy)
+        redirectTear(tear, proxy, "post_update")
         if firstScale(tear) then
             tear.CollisionDamage = tear.CollisionDamage * correction(proxy)
             if not tear:GetData().AscentionMiniIsaacNativeAimed then

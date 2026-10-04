@@ -26,7 +26,7 @@ The native route discards the vanilla Mini Isaac tear. In fallback mode,
   return `true` from the proxy's `MC_PRE_FAMILIAR_UPDATE` while it has a target:
   that suppressed all native tear emission in the in-game test. The current
   idle-only guard returns `true` when no target exists, preventing the player
-  from firing the hidden Incubus before combat. This guard is not yet tested.
+  from firing the hidden Incubus before combat. This was confirmed in game.
   Calling `Incubus.Shoot()` manually after `Weapon::Fire` did not restore the observed
   behavior. Both experimental changes were removed to restore the last
   user-confirmed working ordinary-tear path.
@@ -40,7 +40,12 @@ The native route discards the vanilla Mini Isaac tear. In fallback mode,
   It uses the first raw tear velocity per proxy/frame as the source direction,
   preserving relative multishot spread. The size is reduced there to avoid a
   visible full-size frame. Damage is scaled on the first tear update, after
-  the engine has finalized it.
+  the engine has finalized it. If initialization cannot aim a tear, the current
+  fallback retries in `MC_PRE_TEAR_UPDATE` before motion; `MC_POST_TEAR_UPDATE`
+  remains the last fallback. The debug line records which stage aimed it.
+- `combat.lua` now removes the vanilla Mini Isaac tear at initialization,
+  rather than waiting until its first update. This is intended to remove the
+  original projectile's visible frame without changing proxy shots.
 - Do not gate `MC_POST_TEAR_INIT` on the C++ `firingProxy` flag: in the tested
   build it was already false when Lua saw tear initialization, and all
   redirection stopped. A 72-pixel proximity gate also stopped redirection;
@@ -49,14 +54,15 @@ The native route discards the vanilla Mini Isaac tear. In fallback mode,
   `split_tears.lua` registers before `native_weapon_adapter.lua`, snapshots
   their pre-aim position/velocity/scale, and restores them in
   `MC_POST_FIRE_SPLIT_TEAR` at the source tear's impact point. It marks the
-  child so the adapter will not redirect it again on the first update. This
-  isolated fix is not yet tested in game.
+  child so the adapter will not redirect it again on the first update. Split
+  behavior was confirmed in game. A split child that established the frame's
+  tear-direction baseline also clears that baseline before the next shot.
 
-Last user-confirmed result: ordinary tears worked with the ungated init
-redirect, while split children appeared in wrong locations and idle proxies
-could still follow player input. The current idle guard and split module need
-in-game validation; they do not change native shot timing or the primary
-tear redirect.
+Last user-confirmed result: ordinary shots, split children, and the idle guard
+work. Remaining issue: sometimes the original projectile is briefly visible
+and player input changes the first proxy tear before redirection. The early
+vanilla-tear removal and pre-update fallback added for this issue are not yet
+confirmed in game. Native shot timing and the split callback are unchanged.
 
 If Dynamic Minisaacs Forever is loaded, Ascention's combat dispatcher yields
 to it rather than changing its callbacks. Disable Dynamic to test the new
