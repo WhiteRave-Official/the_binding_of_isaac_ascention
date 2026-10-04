@@ -8,9 +8,10 @@ local function isProxy(entity)
     return familiar and familiar:GetData().AscentionMiniIsaacWeaponProxy or false
 end
 
-function SplitTears.Register(mod)
+function SplitTears.Register(mod, splitLasers)
     if not ModCallbacks.MC_POST_FIRE_SPLIT_TEAR then return end
     local correctedSamples = 0
+    local damageSamples = 0
 
     -- Registered before native_weapon_adapter: capture the engine's split
     -- trajectory before the generic proxy tear redirect can modify it.
@@ -32,6 +33,11 @@ function SplitTears.Register(mod)
             return
         end
 
+        local damageBefore = child.CollisionDamage
+        local sourceDamage = source and source.CollisionDamage
+        local sourceScaled = sourceData and sourceData.AscentionMiniIsaacNativeScaled
+        local childScaled = data.AscentionMiniIsaacNativeScaled
+
         if source and source:ToTear() and source:Exists() then
             child.Position = source.Position
         elseif snapshot then
@@ -41,10 +47,28 @@ function SplitTears.Register(mod)
             child.Velocity = snapshot.velocity
             child.Scale = snapshot.scale
         end
+        if splitLasers then splitLasers.CorrectSplit(child, source) end
         data.AscentionMiniIsaacNativeAimed = nil
         data.AscentionMiniIsaacNativeScaled = true
         data[CHILD_KEY] = true
         data[SNAPSHOT_KEY] = nil
+        if damageSamples < 20 then
+            damageSamples = damageSamples + 1
+            local proxy = child.SpawnerEntity
+            local player = isProxy(proxy) and proxy.Player
+            data.AscentionMiniIsaacSplitDamageLog = true
+            Isaac.DebugString("[AscentionMiniIsaac] split_damage stage=spawn frame="
+                .. tostring(Game():GetFrameCount())
+                .. " child=" .. tostring(child.InitSeed)
+                .. " source=" .. tostring(source and source.InitSeed)
+                .. " player=" .. tostring(player and player.Damage)
+                .. " source_damage=" .. tostring(sourceDamage)
+                .. " source_scaled=" .. tostring(sourceScaled)
+                .. " child_before=" .. tostring(damageBefore)
+                .. " child_before_scaled=" .. tostring(childScaled)
+                .. " child_after=" .. tostring(child.CollisionDamage)
+                .. " child_after_scaled=" .. tostring(data.AscentionMiniIsaacNativeScaled))
+        end
         local proxy = child.SpawnerEntity
         if isProxy(proxy) then
             local proxyData = proxy:GetData()
@@ -62,6 +86,17 @@ function SplitTears.Register(mod)
                 .. " position=" .. tostring(child.Position.X) .. ","
                 .. tostring(child.Position.Y))
         end
+    end)
+
+    mod:AddCallback(ModCallbacks.MC_POST_TEAR_UPDATE, function(_, tear)
+        local data = tear:GetData()
+        if not data.AscentionMiniIsaacSplitDamageLog or tear.FrameCount < 1 then return end
+        data.AscentionMiniIsaacSplitDamageLog = nil
+        Isaac.DebugString("[AscentionMiniIsaac] split_damage stage=update frame="
+            .. tostring(Game():GetFrameCount())
+            .. " child=" .. tostring(tear.InitSeed)
+            .. " damage=" .. tostring(tear.CollisionDamage)
+            .. " scaled=" .. tostring(data.AscentionMiniIsaacNativeScaled))
     end)
 end
 
