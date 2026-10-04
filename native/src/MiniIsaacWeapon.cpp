@@ -131,6 +131,11 @@ int isRegistered(lua_State* state) {
     return 1;
 }
 
+int firingProxySeed(lua_State* state) {
+    lua_pushinteger(state, firingProxy && inputProxy ? inputProxy->seed : 0);
+    return 1;
+}
+
 int diagnostics(lua_State* state) {
     auto* familiar = familiarArg(state);
     lua_newtable(state);
@@ -293,6 +298,7 @@ void registerApi(lua_State* state) {
     lua_pushcfunction(state, resetProxies); lua_setfield(state, -2, "ResetProxies");
     lua_pushcfunction(state, getInputReads); lua_setfield(state, -2, "GetInputReads");
     lua_pushcfunction(state, isRegistered); lua_setfield(state, -2, "IsRegistered");
+    lua_pushcfunction(state, firingProxySeed); lua_setfield(state, -2, "FiringProxySeed");
     lua_pushcfunction(state, diagnostics); lua_setfield(state, -2, "Diagnostics");
     lua_pushcfunction(state, tickProxy); lua_setfield(state, -2, "TickProxy");
     lua_setglobal(state, "AscentionNative");

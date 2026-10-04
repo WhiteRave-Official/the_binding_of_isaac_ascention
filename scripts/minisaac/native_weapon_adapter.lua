@@ -48,6 +48,9 @@ function Adapter.Register(mod)
     local redirectedSamples = 0
     local chargedTearSamples = 0
     local chargedLaserSamples = 0
+    local laserDamageSamples = 0
+    local laserHitSamples = { normal = 0, chocolate = 0 }
+    local proxyBySeed = {}
     local function redirectTear(tear, proxy, stage)
         local data = tear:GetData()
         if data.AscentionMiniIsaacNativeAimed or data.AscentionMiniIsaacSplitChild then return end
@@ -149,34 +152,54 @@ function Adapter.Register(mod)
     end, FamiliarVariant.INCUBUS)
 
     local function scaleLaser(_, laser)
-        local proxy = proxyOf(laser.SpawnerEntity or laser.Parent)
+        local proxy = proxyOf(laser.SpawnerEntity) or proxyOf(laser.Parent)
+        if not proxy and AscentionNative and AscentionNative.FiringProxySeed then
+            local seed = AscentionNative.FiringProxySeed()
+            if seed ~= 0 then
+                local cached = proxyBySeed[seed]
+                if cached and cached:Exists() and cached.InitSeed == seed then
+                    proxy = cached
+                else
+                    for _, entity in ipairs(Isaac.FindByType(EntityType.ENTITY_FAMILIAR,
+                        FamiliarVariant.INCUBUS)) do
+                        if entity.InitSeed == seed
+                            and entity:GetData().AscentionMiniIsaacWeaponProxy then
+                            proxy = entity:ToFamiliar()
+                            proxyBySeed[seed] = proxy
+                            break
+                        end
+                    end
+                end
+            end
+        end
         if proxy and firstScale(laser) then
-            laser:SetDamageMultiplier(laser:GetDamageMultiplier() * correction(proxy))
+            local beforeDamage = laser.CollisionDamage
+            local data = laser:GetData()
+            data.AscentionMiniIsaacLaserFactor = correction(proxy)
+            data.AscentionMiniIsaacLaserChocolate = proxy.Player:HasCollectible(
+                CollectibleType.COLLECTIBLE_CHOCOLATE_MILK)
             laser:SetScale(laser:GetScale() * LASER_SCALE)
             laser:ResetSpriteScale()
+            local weapon = proxy:GetWeapon()
+            if weapon and weapon:GetWeaponType() == WeaponType.WEAPON_LASER
+                and laserDamageSamples < 8 then
+                laserDamageSamples = laserDamageSamples + 1
+                Isaac.DebugString("[AscentionMiniIsaac] technology_laser_damage seed="
+                    .. tostring(laser.InitSeed) .. " proxy=" .. tostring(proxy.InitSeed)
+                    .. " before=" .. tostring(beforeDamage)
+                    .. " factor=" .. tostring(data.AscentionMiniIsaacLaserFactor)
+                    .. " chocolate=" .. tostring(data.AscentionMiniIsaacLaserChocolate))
+            end
         end
+        return proxy
     end
     mod:AddCallback(ModCallbacks.MC_POST_LASER_INIT, function(_, laser)
         local spawner = laser.SpawnerEntity
         local parent = laser.Parent
-        local player = (spawner and spawner:ToPlayer())
-            or (parent and parent:ToPlayer())
-        local proxy = proxyOf(spawner) or proxyOf(parent)
-        if not chargedTechnology(player or (proxy and proxy.Player)) then return end
         local beforeDamage = laser.CollisionDamage
         local beforeScale = laser:GetScale()
-        if proxy and firstScale(laser) then
-            local targetDamage = proxy.Player.Damage * TARGET_DAMAGE
-            if beforeDamage > 0 then
-                laser:SetDamageMultiplier(laser:GetDamageMultiplier()
-                    * targetDamage / beforeDamage)
-            end
-            laser.CollisionDamage = targetDamage
-            laser:SetScale(beforeScale * LASER_SCALE)
-            laser:ResetSpriteScale()
-            laser:GetData().AscentionMiniIsaacChargedTechDamage = targetDamage
-        end
-        if chargedLaserSamples < 20 then
+        local proxy = scaleLaser(nil, laser)
+        if proxy and chargedTechnology(proxy.Player) and chargedLaserSamples < 20 then
             chargedLaserSamples = chargedLaserSamples + 1
             Isaac.DebugString("[AscentionMiniIsaac] charged_technology_laser seed="
                 .. tostring(laser.InitSeed)
@@ -190,13 +213,27 @@ function Adapter.Register(mod)
                 .. " scale_after=" .. tostring(laser:GetScale()))
         end
     end)
-    mod:AddCallback(ModCallbacks.MC_POST_LASER_UPDATE, function(_, laser)
-        if laser.FrameCount > 1 then return end
-        local expected = laser:GetData().AscentionMiniIsaacChargedTechDamage
-        if expected and laser.CollisionDamage > expected then
-            laser.CollisionDamage = expected
-        end
-    end)
+    mod:AddCallback(ModCallbacks.MC_ENTITY_TAKE_DMG,
+        function(_, entity, damage, flags, source, countdown, extraSource)
+            local extra = extraSource and extraSource.Entity
+            local direct = source and source.Entity
+            local laser = extra and extra:ToLaser() or direct and direct:ToLaser()
+            local data = laser and laser:GetData()
+            local factor = data and data.AscentionMiniIsaacLaserFactor
+            if not factor then return end
+            local category = data.AscentionMiniIsaacLaserChocolate
+                and "chocolate" or "normal"
+            local scaled = damage * factor
+            if laserHitSamples[category] < 8 then
+                laserHitSamples[category] = laserHitSamples[category] + 1
+                Isaac.DebugString("[AscentionMiniIsaac] technology_laser_hit seed="
+                    .. tostring(laser.InitSeed) .. " raw=" .. tostring(damage)
+                    .. " scaled=" .. tostring(scaled)
+                    .. " chocolate=" .. tostring(data.AscentionMiniIsaacLaserChocolate)
+                    .. " target=" .. tostring(entity.InitSeed))
+            end
+            return { Damage = scaled }
+        end, EntityType.ENTITY_NPC)
     mod:AddCallback(ModCallbacks.MC_POST_FAMILIAR_FIRE_BRIMSTONE,
         scaleLaser, FamiliarVariant.INCUBUS)
     mod:AddCallback(ModCallbacks.MC_POST_FAMILIAR_FIRE_TECH_LASER,
