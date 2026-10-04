@@ -155,14 +155,16 @@ int tickProxy(lua_State* state) {
     if (!familiar || !registered(familiar) || !g_Game || !familiar->_weapon) {
         lua_pushboolean(state, 0);
         lua_pushboolean(state, 0);
-        return 2;
+        lua_pushboolean(state, 0);
+        return 3;
     }
 
     auto& proxy = proxies.at(familiar);
     if (proxy.lastTick == g_Game->_frameCount) {
         lua_pushboolean(state, 0);
         lua_pushboolean(state, 0);
-        return 2;
+        lua_pushboolean(state, 0);
+        return 3;
     }
     proxy.lastTick = g_Game->_frameCount;
 
@@ -228,7 +230,9 @@ int tickProxy(lua_State* state) {
     lua_pushboolean(state, releaseCharge && knifeWeapon
         || weapon->GetNumFired() != previousShots);
     lua_pushboolean(state, releaseCharge && weapon->GetWeaponType() == WEAPON_TECH_X);
-    return 2;
+    lua_pushboolean(state, weapon->GetWeaponType() == WEAPON_BRIMSTONE
+        && proxy.releaseFrames > 0);
+    return 3;
 }
 
 void registerApi(lua_State* state) {

@@ -2,7 +2,9 @@ local ChargeVisuals = {}
 
 local STATE_KEY = "AscentionMiniIsaacChargeVisual"
 local BODY_STATE_KEY = "AscentionMiniIsaacBodySheet"
+
 local BLACK_BODY_SHEET = "gfx/familiar/minisaac_charge/familiar_minisaac_black.png"
+local DEFAULT_BODY_SHEET = "gfx/familiar/familiar_minisaac.png"
 local RELEASE_FRAMES = 4
 local RELEASE_SHOT_FRAMES = 2
 local reportedFirstRender = false
@@ -100,6 +102,8 @@ local function getOrCreateState(familiar, profile)
         sprite = sprite,
         direction = Direction.DOWN,
         releaseTimer = 0,
+        beamActive = false,
+        recoveryTimer = 0,
         lastShotFrame = -1,
     }
     data[STATE_KEY] = state
@@ -109,11 +113,13 @@ end
 local function restoreBodySheet(familiar)
     local data = familiar:GetData()
     local bodyState = data[BODY_STATE_KEY]
-    if not bodyState then
-        return
-    end
+    if not bodyState then return end
 
-    familiar:GetSprite():ReplaceSpritesheet(0, bodyState.originalSheet, true)
+    local original = bodyState.originalSheet
+    if original and original:lower():match("familiar_minisaac_black%.png$") then
+        original = DEFAULT_BODY_SHEET
+    end
+    familiar:GetSprite():ReplaceSpritesheet(0, original, true)
     data[BODY_STATE_KEY] = nil
 end
 
@@ -150,25 +156,47 @@ local function updateFamiliar(_, familiar)
     local shotFrame = data.AscentionMiniIsaacLastShotFrame or -1
     local aim = data.AscentionMiniIsaacAim
     state.active = aim ~= nil and aim:LengthSquared() > 0.01
-    if state.active then
-        if math.abs(aim.X) > math.abs(aim.Y) then
-            state.direction = aim.X < 0 and Direction.LEFT or Direction.RIGHT
-        else
-            state.direction = aim.Y < 0 and Direction.UP or Direction.DOWN
+    if profile.id == "brimstone" then
+        if data.AscentionMiniIsaacBrimstoneReleasing then
+            state.beamActive = true
+            state.recoveryTimer = 0
+        elseif state.beamActive then
+            state.beamActive = false
+            state.recoveryTimer = RELEASE_SHOT_FRAMES
+        elseif state.recoveryTimer > 0 then
+            state.recoveryTimer = state.recoveryTimer - 1
         end
     else
-        state.direction = animationDirection(familiar, state.direction)
-        state.releaseTimer = 0
+        if state.releaseTimer > 0 then
+            state.releaseTimer = state.releaseTimer - 1
+        end
+        if shotFrame ~= state.lastShotFrame
+            and shotFrame >= Game():GetFrameCount() - 1 then
+            state.releaseTimer = RELEASE_FRAMES
+        end
     end
 
-    if state.releaseTimer > 0 then
-        state.releaseTimer = state.releaseTimer - 1
-    end
-
-    if state.active and shotFrame ~= state.lastShotFrame then
-        state.releaseTimer = RELEASE_FRAMES
-    elseif not state.active then
-        state.releaseTimer = 0
+    if shotFrame ~= state.lastShotFrame
+        and shotFrame >= Game():GetFrameCount() - 1 then
+        local shot = data.AscentionMiniIsaacLastShotVelocity
+        if shot and shot:LengthSquared() > 0.01 then
+            if math.abs(shot.X) > math.abs(shot.Y) then
+                state.direction = shot.X < 0 and Direction.LEFT or Direction.RIGHT
+            else
+                state.direction = shot.Y < 0 and Direction.UP or Direction.DOWN
+            end
+        end
+    elseif not state.beamActive and state.recoveryTimer == 0
+        and state.releaseTimer == 0 then
+        if state.active then
+            if math.abs(aim.X) > math.abs(aim.Y) then
+                state.direction = aim.X < 0 and Direction.LEFT or Direction.RIGHT
+            else
+                state.direction = aim.Y < 0 and Direction.UP or Direction.DOWN
+            end
+        else
+            state.direction = animationDirection(familiar, state.direction)
+        end
     end
     state.lastShotFrame = shotFrame
 end
@@ -195,7 +223,11 @@ local function renderFamiliar(_, familiar)
     end
 
     local facing = directionName(state.direction)
-    if state.releaseTimer > 0 then
+    if profile.id == "brimstone" and state.beamActive then
+        state.sprite:SetFrame("Release" .. facing, 0)
+    elseif profile.id == "brimstone" and state.recoveryTimer > 0 then
+        state.sprite:SetFrame("Release" .. facing, 1)
+    elseif state.releaseTimer > 0 then
         local frame = 0
         if (profile.releaseFrameCount or 1) > 1 then
             local elapsed = RELEASE_FRAMES - state.releaseTimer

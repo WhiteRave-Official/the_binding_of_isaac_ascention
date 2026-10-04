@@ -330,6 +330,16 @@ function Router.Register(mod)
 
     mod:AddCallback(ModCallbacks.MC_PRE_GAME_EXIT, clearProxies)
 
+    mod:AddCallback(ModCallbacks.MC_PRE_FAMILIAR_UPDATE, function(_, mini)
+        if not Router.IsManaging(mini) then return end
+        local proxy = proxyOf(mini)
+        local weapon = proxy and proxy:GetWeapon()
+        if weapon and weapon:GetWeaponType() == WeaponType.WEAPON_KNIFE then
+            -- The proxy fires the knives; suppress the Mini Isaac tear shot and its sound.
+            mini.FireCooldown = math.max(mini.FireCooldown, 2)
+        end
+    end, FamiliarVariant.MINISAAC)
+
     mod:AddCallback(ModCallbacks.MC_FAMILIAR_UPDATE, function(_, mini)
         if not Router.IsManaging(mini) then
             local data = mini:GetData()
@@ -345,6 +355,21 @@ function Router.Register(mod)
         local data = mini:GetData()
         local weapon = proxy and proxy:GetWeapon()
         if weapon and weapon:GetWeaponType() == WeaponType.WEAPON_KNIFE then
+            local shotFrame = data.AscentionMiniIsaacKnifeAttackFrame
+            if shotFrame then
+                local elapsed = Game():GetFrameCount() - shotFrame
+                local direction = data.AscentionMiniIsaacKnifeAttackFacing or Direction.DOWN
+                local suffix = direction == Direction.UP and "Up"
+                    or direction == Direction.LEFT and "Left"
+                    or direction == Direction.RIGHT and "Right" or "Down"
+                local animation = "Head" .. suffix
+                if elapsed < 2 then
+                    mini:GetSprite():SetOverlayFrame(animation, 1)
+                else
+                    mini:GetSprite():SetOverlayFrame(animation, 0)
+                    data.AscentionMiniIsaacKnifeAttackFrame = nil
+                end
+            end
             if data.AscentionMiniIsaacOriginalDepthOffset == nil then
                 data.AscentionMiniIsaacOriginalDepthOffset = mini.DepthOffset
             end
@@ -414,6 +439,8 @@ function Router.Register(mod)
                 proxyData.AscentionMiniIsaacKnifeFlightFrame = Game():GetFrameCount()
                 data.AscentionMiniIsaacLastShotFrame = Game():GetFrameCount()
                 data.AscentionMiniIsaacLastShotVelocity = aim
+                data.AscentionMiniIsaacKnifeAttackFrame = Game():GetFrameCount()
+                data.AscentionMiniIsaacKnifeAttackFacing = knifeFacing(mini)
             end
             return true
         end
@@ -472,7 +499,11 @@ function Router.Register(mod)
         mini:GetData().AscentionMiniIsaacAim = target and aim or nil
         local weapon = proxy:GetWeapon()
         if weapon and weapon:GetWeaponType() == WeaponType.WEAPON_KNIFE then return end
-        local fired, techXRelease = native.TickProxy(proxy, aim.X, aim.Y, target ~= nil)
+        local fired, techXRelease, brimstoneReleasing =
+            native.TickProxy(proxy, aim.X, aim.Y, target ~= nil)
+        mini:GetData().AscentionMiniIsaacBrimstoneReleasing =
+            weapon and weapon:GetWeaponType() == WeaponType.WEAPON_BRIMSTONE
+            and brimstoneReleasing or false
         if techXRelease then
             local data = mini:GetData()
             local samples = data.AscentionMiniIsaacTechXReleases or 0
