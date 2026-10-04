@@ -41,7 +41,7 @@ function Adapter.Register(mod)
     local redirectedSamples = 0
     local function redirectTear(tear, proxy)
         local data = tear:GetData()
-        if data.AscentionMiniIsaacNativeAimed then return end
+        if data.AscentionMiniIsaacNativeAimed or data.AscentionMiniIsaacSplitChild then return end
         local player = proxy.Player
         if not player then return end
         local owner = proxy:GetData().AscentionMiniIsaacProxyOwner

@@ -396,6 +396,21 @@ function Router.Register(mod)
         proxy.Velocity = Vector.Zero
         local weapon = proxy:GetWeapon()
         local kind = weapon and weapon:GetWeaponType()
+        if kind == WeaponType.WEAPON_TEARS then
+            local target = targetFor(mini)
+            if not target then
+                -- Only skip idle AI. Skipping it during combat stops native tears.
+                mini:GetData().AscentionMiniIsaacAim = nil
+                local proxyData = proxy:GetData()
+                if not proxyData.AscentionMiniIsaacIdleGuardLogged then
+                    proxyData.AscentionMiniIsaacIdleGuardLogged = true
+                    Isaac.DebugString("[AscentionMiniIsaac] idle_guard proxy="
+                        .. tostring(proxy.InitSeed))
+                end
+                return true
+            end
+            mini:GetData().AscentionMiniIsaacAim = target.Position - mini.Position
+        end
         if kind == WeaponType.WEAPON_KNIFE then
             local mainEntity = weapon:GetMainEntity()
             local knife = mainEntity and mainEntity:ToKnife()

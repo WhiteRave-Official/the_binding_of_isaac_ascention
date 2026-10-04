@@ -23,12 +23,15 @@ The native route discards the vanilla Mini Isaac tear. In fallback mode,
 - `incubus_router.lua` creates and registers an invisible Incubus proxy for each
   Mini Isaac. Its selected target is stored in `AscentionMiniIsaacAim`.
 - `MC_FAMILIAR_UPDATE` calls `native.TickProxy` for ordinary tears. Do not
-  return `true` from the proxy's `MC_PRE_FAMILIAR_UPDATE` for `WEAPON_TEARS`:
-  that suppressed all native tear emission in the in-game test. Calling
-  `Incubus.Shoot()` manually after `Weapon::Fire` did not restore the observed
+  return `true` from the proxy's `MC_PRE_FAMILIAR_UPDATE` while it has a target:
+  that suppressed all native tear emission in the in-game test. The current
+  idle-only guard returns `true` when no target exists, preventing the player
+  from firing the hidden Incubus before combat. This guard is not yet tested.
+  Calling `Incubus.Shoot()` manually after `Weapon::Fire` did not restore the observed
   behavior. Both experimental changes were removed to restore the last
   user-confirmed working ordinary-tear path.
-- The native `Weapon::Fire` call creates ordinary tears, but these do **not**
+- `Weapon::Fire` advances the shot state, but ordinary tear emission also
+  depends on Incubus AI. These tears do **not**
   pass through `Entity_Familiar::FireProjectile` or
   `MC_POST_FAMILIAR_FIRE_PROJECTILE`. A nonzero `GetNumFired()` is not proof that
   either of those hooks ran. Observed tears had the proxy as `SpawnerEntity` and
@@ -42,15 +45,18 @@ The native route discards the vanilla Mini Isaac tear. In fallback mode,
   build it was already false when Lua saw tear initialization, and all
   redirection stopped. A 72-pixel proximity gate also stopped redirection;
   the initial position is not a reliable discriminator at that callback.
-- Split children may keep the proxy as `SpawnerEntity`. The working ordinary
-  tear path still redirects them and can move their spawn point away from the
-  impact. This is an open bug. Fix it separately without changing the proxy AI,
-  native shot timing, or ordinary tear routing.
+- Split children may keep the proxy as `SpawnerEntity`. The new
+  `split_tears.lua` registers before `native_weapon_adapter.lua`, snapshots
+  their pre-aim position/velocity/scale, and restores them in
+  `MC_POST_FIRE_SPLIT_TEAR` at the source tear's impact point. It marks the
+  child so the adapter will not redirect it again on the first update. This
+  isolated fix is not yet tested in game.
 
 Last user-confirmed result: ordinary tears worked with the ungated init
-redirect, while split children appeared in wrong locations. This route is
-restored in source and DLL but has not yet been rechecked in game after the
-rollback. Test ordinary tears first; only then isolate the split bug.
+redirect, while split children appeared in wrong locations and idle proxies
+could still follow player input. The current idle guard and split module need
+in-game validation; they do not change native shot timing or the primary
+tear redirect.
 
 If Dynamic Minisaacs Forever is loaded, Ascention's combat dispatcher yields
 to it rather than changing its callbacks. Disable Dynamic to test the new
