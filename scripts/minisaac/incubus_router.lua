@@ -6,6 +6,8 @@ local OWNER_KEY = "AscentionMiniIsaacProxyOwner"
 local TARGET_REFRESH_INTERVAL = 6
 local native = AscentionNative
 local LOKIS_HORNS = CollectibleType.COLLECTIBLE_LOKIS_HORNS or 87
+local MONSTROS_LUNG = CollectibleType.COLLECTIBLE_MONSTROS_LUNG
+local TECHNOLOGY = CollectibleType.COLLECTIBLE_TECHNOLOGY
 
 local KNIFE_DIRECTIONS = {
     Direction.DOWN,
@@ -477,15 +479,31 @@ function Router.Register(mod)
             return true
         end
         removeExtraKnives(proxy)
-        if kind == WeaponType.WEAPON_TECH_X then
+        local chargedTechnology = kind == WeaponType.WEAPON_LASER
+            and mini.Player:HasCollectible(MONSTROS_LUNG)
+            and mini.Player:HasCollectible(TECHNOLOGY)
+        if kind == WeaponType.WEAPON_TECH_X or chargedTechnology then
             local target = targetFor(mini)
             local aim = target and (target.Position - mini.Position) or Vector.Zero
             local data = mini:GetData()
             data.AscentionMiniIsaacAim = target and aim or nil
-            local fired, released = native.TickProxy(proxy, aim.X, aim.Y, target ~= nil)
+            local fired, released = native.TickProxy(proxy, aim.X, aim.Y,
+                target ~= nil, chargedTechnology)
             if fired then
                 data.AscentionMiniIsaacLastShotFrame = Game():GetFrameCount()
                 data.AscentionMiniIsaacLastShotVelocity = aim
+                if chargedTechnology then
+                    local samples = data.AscentionMiniIsaacChargedTechSamples or 0
+                    if samples < 8 then
+                        data.AscentionMiniIsaacChargedTechSamples = samples + 1
+                        local state = native.Diagnostics(proxy)
+                        Isaac.DebugString("[AscentionMiniIsaac] charged_technology_fire mini="
+                            .. tostring(mini.InitSeed)
+                            .. " suppressed_tears=" .. tostring(state.suppressed_projectiles)
+                            .. " tech_lasers=" .. tostring(state.tech_lasers)
+                            .. " charge=" .. tostring(weapon:GetCharge()))
+                    end
+                end
             end
             local releaseSamples = data.AscentionMiniIsaacTechXReleases or 0
             if released and releaseSamples < 8 then

@@ -21,6 +21,8 @@ struct ProxyState {
     Vector afterFireDirection{ 0.0f, 0.0f };
     unsigned int releases = 0;
     unsigned int projectileCalls = 0;
+    unsigned int suppressedProjectiles = 0;
+    bool suppressProjectile = false;
     unsigned int externalProjectileCalls = 0;
     Vector scopedProjectileAim{ 0.0f, 0.0f };
     Vector externalProjectileAim{ 0.0f, 0.0f };
@@ -136,6 +138,7 @@ int diagnostics(lua_State* state) {
     lua_pushnumber(state, proxy.afterFireDirection.y); lua_setfield(state, -2, "after_y");
     lua_pushinteger(state, proxy.releases); lua_setfield(state, -2, "releases");
     lua_pushinteger(state, proxy.projectileCalls); lua_setfield(state, -2, "projectiles");
+    lua_pushinteger(state, proxy.suppressedProjectiles); lua_setfield(state, -2, "suppressed_projectiles");
     lua_pushinteger(state, proxy.externalProjectileCalls); lua_setfield(state, -2, "external_projectiles");
     lua_pushnumber(state, proxy.scopedProjectileAim.x); lua_setfield(state, -2, "scoped_aim_x");
     lua_pushnumber(state, proxy.scopedProjectileAim.y); lua_setfield(state, -2, "scoped_aim_y");
@@ -174,6 +177,7 @@ int tickProxy(lua_State* state) {
     }
 
     auto& proxy = proxies.at(familiar);
+    proxy.suppressProjectile = lua_toboolean(state, 5);
     if (proxy.lastTick == g_Game->_frameCount) {
         lua_pushboolean(state, 0);
         lua_pushboolean(state, 0);
@@ -271,6 +275,10 @@ HOOK_METHOD(Entity_Familiar, Shoot, () -> void) {
 HOOK_METHOD(Entity_Familiar, FireProjectile, (const Vector& aimDirection, bool unknown) -> Entity_Tear*) {
     const bool managed = registered(this);
     const bool controlled = firingProxy;
+    if (managed && controlled && proxies.at(this).suppressProjectile) {
+        ++proxies.at(this).suppressedProjectiles;
+        return nullptr;
+    }
     auto* tear = super(aimDirection, unknown);
     if (managed && registered(this)) {
         auto& proxy = proxies.at(this);
