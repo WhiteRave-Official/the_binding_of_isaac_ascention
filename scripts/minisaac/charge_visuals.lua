@@ -11,6 +11,7 @@ local reportedFirstRender = false
 
 local MONSTROS_LUNG = CollectibleType.COLLECTIBLE_MONSTROS_LUNG
 local TECHNOLOGY = CollectibleType.COLLECTIBLE_TECHNOLOGY
+local CHOCOLATE_MILK = CollectibleType.COLLECTIBLE_CHOCOLATE_MILK
 
 local profiles = {
     {
@@ -19,6 +20,15 @@ local profiles = {
         releaseFrameCount = 1,
         matches = function(player)
             return player:HasCollectible(MONSTROS_LUNG)
+                and player:HasCollectible(TECHNOLOGY)
+        end,
+    },
+    {
+        id = "technology_chocolate_milk",
+        spritePath = "gfx/familiar/minisaac_charge/technology.anm2",
+        releaseFrameCount = 1,
+        matches = function(player)
+            return player:HasCollectible(CHOCOLATE_MILK)
                 and player:HasCollectible(TECHNOLOGY)
         end,
     },
@@ -33,6 +43,14 @@ local profiles = {
         weaponType = WeaponType.WEAPON_BRIMSTONE,
         spritePath = "gfx/familiar/minisaac_charge/brimstone.anm2",
         releaseFrameCount = 2,
+    },
+    {
+        id = "chocolate_milk",
+        spritePath = "gfx/familiar/minisaac_charge/chocolate_milk.anm2",
+        releaseFrameCount = 2,
+        matches = function(player)
+            return player:HasCollectible(CHOCOLATE_MILK)
+        end,
     },
     {
         id = "technology",
@@ -153,6 +171,18 @@ local function updateFamiliar(_, familiar)
     updateBodySheet(familiar, profile)
     local state = getOrCreateState(familiar, profile)
     local data = familiar:GetData()
+    state.fallbackCharge = nil
+    state.fallbackMax = nil
+    if profile.id == "technology_chocolate_milk" then
+        local pointer = data.AscentionMiniIsaacProxy
+        local proxy = pointer and pointer.Ref
+        local weapon = proxy and proxy:Exists() and proxy:ToFamiliar():GetWeapon()
+        if weapon and weapon:GetMaxCharge() <= 0 and AscentionNative then
+            local diagnostics = AscentionNative.Diagnostics(proxy)
+            state.fallbackCharge = diagnostics.chocolate_laser_charge
+            state.fallbackMax = diagnostics.chocolate_laser_max
+        end
+    end
     local shotFrame = data.AscentionMiniIsaacLastShotFrame or -1
     local aim = data.AscentionMiniIsaacAim
     state.active = aim ~= nil and aim:LengthSquared() > 0.01
@@ -240,7 +270,10 @@ local function renderFamiliar(_, familiar)
             local pointer = familiar:GetData().AscentionMiniIsaacProxy
             local proxy = pointer and pointer.Ref
             local weapon = proxy and proxy:Exists() and proxy:ToFamiliar():GetWeapon()
-            if state.active and weapon and weapon:GetMaxCharge() > 0 then
+            if state.active and state.fallbackMax and state.fallbackMax > 0 then
+                stage = math.min(3, math.floor(state.fallbackCharge
+                    * 4 / state.fallbackMax))
+            elseif state.active and weapon and weapon:GetMaxCharge() > 0 then
                 stage = math.min(3, math.floor(weapon:GetCharge()
                     * 4 / weapon:GetMaxCharge()))
             elseif state.active then

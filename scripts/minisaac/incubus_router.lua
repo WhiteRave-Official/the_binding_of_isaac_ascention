@@ -8,6 +8,7 @@ local native = AscentionNative
 local LOKIS_HORNS = CollectibleType.COLLECTIBLE_LOKIS_HORNS or 87
 local MONSTROS_LUNG = CollectibleType.COLLECTIBLE_MONSTROS_LUNG
 local TECHNOLOGY = CollectibleType.COLLECTIBLE_TECHNOLOGY
+local CHOCOLATE_MILK = CollectibleType.COLLECTIBLE_CHOCOLATE_MILK
 
 local KNIFE_DIRECTIONS = {
     Direction.DOWN,
@@ -482,24 +483,52 @@ function Router.Register(mod)
         local chargedTechnology = kind == WeaponType.WEAPON_LASER
             and mini.Player:HasCollectible(MONSTROS_LUNG)
             and mini.Player:HasCollectible(TECHNOLOGY)
-        if kind == WeaponType.WEAPON_TECH_X or chargedTechnology then
+        local chargedChocolateLaser = kind == WeaponType.WEAPON_LASER
+            and mini.Player:HasCollectible(TECHNOLOGY)
+            and mini.Player:HasCollectible(CHOCOLATE_MILK)
+        local chargedChocolate = kind == WeaponType.WEAPON_TEARS
+            and mini.Player:HasCollectible(CHOCOLATE_MILK)
+        if kind == WeaponType.WEAPON_TECH_X or chargedTechnology
+            or chargedChocolateLaser or chargedChocolate then
             local target = targetFor(mini)
             local aim = target and (target.Position - mini.Position) or Vector.Zero
             local data = mini:GetData()
             data.AscentionMiniIsaacAim = target and aim or nil
             local fired, released = native.TickProxy(proxy, aim.X, aim.Y,
-                target ~= nil, chargedTechnology)
+                target ~= nil, chargedTechnology, chargedChocolate,
+                chargedChocolateLaser)
+            if (chargedChocolate or chargedChocolateLaser) and target
+                and Game():GetFrameCount() % 45 == 0 then
+                local samples = data.AscentionMiniIsaacChocolateChargeSamples or 0
+                if samples < 8 then
+                    data.AscentionMiniIsaacChocolateChargeSamples = samples + 1
+                    Isaac.DebugString("[AscentionMiniIsaac] chocolate_charge mini="
+                        .. tostring(mini.InitSeed)
+                        .. " weapon=" .. tostring(kind)
+                        .. " charge=" .. tostring(weapon:GetCharge())
+                        .. " max=" .. tostring(weapon:GetMaxCharge())
+                        .. " fallback_charge=" .. tostring(native.Diagnostics(proxy).chocolate_laser_charge)
+                        .. " fallback_max=" .. tostring(native.Diagnostics(proxy).chocolate_laser_max)
+                        .. " fired=" .. tostring(weapon:GetNumFired()))
+                end
+            end
             if fired then
                 data.AscentionMiniIsaacLastShotFrame = Game():GetFrameCount()
                 data.AscentionMiniIsaacLastShotVelocity = aim
-                if chargedTechnology then
+                if chargedTechnology or chargedChocolateLaser or chargedChocolate then
                     local samples = data.AscentionMiniIsaacChargedTechSamples or 0
                     if samples < 8 then
                         data.AscentionMiniIsaacChargedTechSamples = samples + 1
                         local state = native.Diagnostics(proxy)
-                        Isaac.DebugString("[AscentionMiniIsaac] charged_technology_fire mini="
+                        Isaac.DebugString("[AscentionMiniIsaac] charged_fire kind="
+                            .. (chargedChocolate and "chocolate_milk"
+                                or chargedChocolateLaser and "technology_chocolate_milk"
+                                or "technology_monstros_lung")
+                            .. " mini="
                             .. tostring(mini.InitSeed)
                             .. " suppressed_tears=" .. tostring(state.suppressed_projectiles)
+                            .. " chocolate_automatic=" .. tostring(state.chocolate_automatic)
+                            .. " chocolate_manual=" .. tostring(state.chocolate_manual)
                             .. " tech_lasers=" .. tostring(state.tech_lasers)
                             .. " charge=" .. tostring(weapon:GetCharge()))
                     end

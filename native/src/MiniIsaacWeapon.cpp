@@ -13,6 +13,8 @@ struct ProxyState {
     unsigned int seed;
     int lastTick = -1;
     int releaseFrames = 0;
+    float syntheticChocolateCharge = 0.0f;
+    float syntheticChocolateMax = 0.0f;
     bool wasShooting = false;
     unsigned int inputReads = 0;
     unsigned int blockedFireCalls = 0;
@@ -20,9 +22,13 @@ struct ProxyState {
     int blockedFireFrame = -1;
     Vector afterFireDirection{ 0.0f, 0.0f };
     unsigned int releases = 0;
+    unsigned int automaticChocolateShots = 0;
+    unsigned int manualChocolateShots = 0;
     unsigned int projectileCalls = 0;
     unsigned int suppressedProjectiles = 0;
     bool suppressProjectile = false;
+    bool chocolateMode = false;
+    bool allowChocolateProjectile = false;
     unsigned int externalProjectileCalls = 0;
     Vector scopedProjectileAim{ 0.0f, 0.0f };
     Vector externalProjectileAim{ 0.0f, 0.0f };
@@ -137,6 +143,10 @@ int diagnostics(lua_State* state) {
     lua_pushnumber(state, proxy.afterFireDirection.x); lua_setfield(state, -2, "after_x");
     lua_pushnumber(state, proxy.afterFireDirection.y); lua_setfield(state, -2, "after_y");
     lua_pushinteger(state, proxy.releases); lua_setfield(state, -2, "releases");
+    lua_pushinteger(state, proxy.automaticChocolateShots); lua_setfield(state, -2, "chocolate_automatic");
+    lua_pushinteger(state, proxy.manualChocolateShots); lua_setfield(state, -2, "chocolate_manual");
+    lua_pushnumber(state, proxy.syntheticChocolateCharge); lua_setfield(state, -2, "chocolate_laser_charge");
+    lua_pushnumber(state, proxy.syntheticChocolateMax); lua_setfield(state, -2, "chocolate_laser_max");
     lua_pushinteger(state, proxy.projectileCalls); lua_setfield(state, -2, "projectiles");
     lua_pushinteger(state, proxy.suppressedProjectiles); lua_setfield(state, -2, "suppressed_projectiles");
     lua_pushinteger(state, proxy.externalProjectileCalls); lua_setfield(state, -2, "external_projectiles");
@@ -178,6 +188,9 @@ int tickProxy(lua_State* state) {
 
     auto& proxy = proxies.at(familiar);
     proxy.suppressProjectile = lua_toboolean(state, 5);
+    proxy.chocolateMode = lua_toboolean(state, 6);
+    const bool chocolateLaser = lua_toboolean(state, 7);
+    proxy.allowChocolateProjectile = false;
     if (proxy.lastTick == g_Game->_frameCount) {
         lua_pushboolean(state, 0);
         lua_pushboolean(state, 0);
@@ -187,20 +200,33 @@ int tickProxy(lua_State* state) {
     proxy.lastTick = g_Game->_frameCount;
 
     auto* weapon = familiar->_weapon;
-    const float maxCharge = weapon->GetMaxCharge();
+    const float nativeMaxCharge = weapon->GetMaxCharge();
+    const bool syntheticChocolateLaser = chocolateLaser && nativeMaxCharge <= 0.0f;
+    const float maxCharge = syntheticChocolateLaser
+        ? std::max(1.0f, weapon->GetMaxFireDelay() * 3.5f) : nativeMaxCharge;
+    proxy.syntheticChocolateMax = syntheticChocolateLaser ? maxCharge : 0.0f;
+    if (!syntheticChocolateLaser) proxy.syntheticChocolateCharge = 0.0f;
     const bool knifeWeapon = weapon->GetWeaponType() == WEAPON_KNIFE;
     bool shooting = hasTarget;
     bool releaseCharge = false;
     if (!hasTarget) {
         proxy.releaseFrames = 0;
+        proxy.syntheticChocolateCharge = 0.0f;
         if (knifeWeapon) *weapon->GetCharge() = 0.0f;
     } else if (maxCharge > 0.0f) {
+        if (syntheticChocolateLaser && proxy.releaseFrames == 0) {
+            proxy.syntheticChocolateCharge = std::min(maxCharge,
+                proxy.syntheticChocolateCharge + 1.0f);
+        }
         if (knifeWeapon && proxy.releaseFrames == 0) {
             *weapon->GetCharge() = std::min(maxCharge, *weapon->GetCharge() + 1.0f);
         }
-        if (proxy.releaseFrames == 0 && *weapon->GetCharge() >= maxCharge) {
+        const float charge = syntheticChocolateLaser
+            ? proxy.syntheticChocolateCharge : *weapon->GetCharge();
+        if (proxy.releaseFrames == 0 && charge >= maxCharge) {
             proxy.releaseFrames = weapon->GetWeaponType() == WEAPON_BRIMSTONE ? 25 : knifeWeapon ? 1 : 2;
             releaseCharge = true;
+            if (syntheticChocolateLaser) proxy.syntheticChocolateCharge = 0.0f;
         }
         if (proxy.releaseFrames > 0) {
             --proxy.releaseFrames;
@@ -218,7 +244,7 @@ int tickProxy(lua_State* state) {
     inputShooting = shooting;
     inputTriggered = shooting && !proxy.wasShooting;
     firingProxy = true;
-    if (!knifeWeapon) weapon->Fire(direction, shooting, false);
+    if (!knifeWeapon && !syntheticChocolateLaser) weapon->Fire(direction, shooting, false);
     proxy.afterFireDirection = *weapon->GetDirection();
     if (releaseCharge) {
         ++proxy.releases;
@@ -235,17 +261,23 @@ int tickProxy(lua_State* state) {
         }
         if (knifeWeapon) {
             *weapon->GetCharge() = 0.0f;
+        } else if (proxy.chocolateMode && weapon->GetNumFired() != previousShots) {
+            // Chocolate Milk already released through Weapon::Fire; Shoot would add another tear.
+            ++proxy.automaticChocolateShots;
         } else {
             inputShooting = true;
             inputTriggered = true;
+            proxy.allowChocolateProjectile = proxy.chocolateMode;
             familiar->Shoot();
+            proxy.allowChocolateProjectile = false;
+            if (proxy.chocolateMode) ++proxy.manualChocolateShots;
         }
         if (techXOwner) proxy.releaseTechXCalls = proxy.techXCalls - previousTechX;
     }
     firingProxy = false;
     inputProxy = nullptr;
     proxy.wasShooting = shooting;
-    lua_pushboolean(state, releaseCharge && knifeWeapon
+    lua_pushboolean(state, releaseCharge && (knifeWeapon || syntheticChocolateLaser)
         || weapon->GetNumFired() != previousShots);
     lua_pushboolean(state, releaseCharge && weapon->GetWeaponType() == WEAPON_TECH_X);
     lua_pushboolean(state, weapon->GetWeaponType() == WEAPON_BRIMSTONE
@@ -275,7 +307,9 @@ HOOK_METHOD(Entity_Familiar, Shoot, () -> void) {
 HOOK_METHOD(Entity_Familiar, FireProjectile, (const Vector& aimDirection, bool unknown) -> Entity_Tear*) {
     const bool managed = registered(this);
     const bool controlled = firingProxy;
-    if (managed && controlled && proxies.at(this).suppressProjectile) {
+    if (managed && controlled && (proxies.at(this).suppressProjectile
+            || (proxies.at(this).chocolateMode
+                && !proxies.at(this).allowChocolateProjectile))) {
         ++proxies.at(this).suppressedProjectiles;
         return nullptr;
     }
