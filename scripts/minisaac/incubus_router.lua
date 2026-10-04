@@ -333,9 +333,9 @@ function Router.Register(mod)
     mod:AddCallback(ModCallbacks.MC_PRE_FAMILIAR_UPDATE, function(_, mini)
         if not Router.IsManaging(mini) then return end
         local proxy = proxyOf(mini)
-        local weapon = proxy and proxy:GetWeapon()
-        if weapon and weapon:GetWeaponType() == WeaponType.WEAPON_KNIFE then
-            -- The proxy fires the knives; suppress the Mini Isaac tear shot and its sound.
+        if proxy then
+            -- Only the proxy should fire; removing a vanilla Mini Isaac tear
+            -- after creation leaves its splash effect at the familiar.
             mini.FireCooldown = math.max(mini.FireCooldown, 2)
         end
     end, FamiliarVariant.MINISAAC)
