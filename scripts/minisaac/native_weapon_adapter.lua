@@ -18,6 +18,12 @@ local function proxyOf(entity)
     return nil
 end
 
+local function directProxy(entity)
+    local familiar = entity and entity:ToFamiliar()
+    return familiar and familiar:GetData().AscentionMiniIsaacWeaponProxy
+        and familiar or nil
+end
+
 local function correction(proxy)
     local player = proxy.Player
     return TARGET_DAMAGE / (player and player:GetPlayerType() == PlayerType.PLAYER_LILITH
@@ -32,8 +38,63 @@ local function firstScale(entity)
 end
 
 function Adapter.Register(mod)
+    local redirectedSamples = 0
+    local function redirectTear(tear, proxy)
+        local data = tear:GetData()
+        if data.AscentionMiniIsaacNativeAimed then return end
+        local player = proxy.Player
+        if not player then return end
+        local owner = proxy:GetData().AscentionMiniIsaacProxyOwner
+        local mini = owner and owner.Ref
+        local aim = mini and mini:Exists() and mini:GetData().AscentionMiniIsaacAim
+        if not aim or aim:LengthSquared() < 0.01 then return end
+        local velocity = tear.Velocity - player.Velocity * 1.2
+        if velocity:LengthSquared() < 0.01 then return end
+        local frame = Game():GetFrameCount()
+        local proxyData = proxy:GetData()
+        if proxyData.AscentionMiniIsaacTearSourceFrame ~= frame then
+            proxyData.AscentionMiniIsaacTearSourceFrame = frame
+            proxyData.AscentionMiniIsaacTearSource = velocity
+        end
+        local source = proxyData.AscentionMiniIsaacTearSource
+        local angle = aim:GetAngleDegrees() - source:GetAngleDegrees()
+        tear.Velocity = velocity:Rotated(angle)
+        tear.Position = proxy.Position + (tear.Position - proxy.Position):Rotated(angle)
+        tear.Scale = tear.Scale * TEAR_SCALE
+        data.AscentionMiniIsaacNativeAimed = true
+        if redirectedSamples < 6 then
+            redirectedSamples = redirectedSamples + 1
+            Isaac.DebugString("[AscentionMiniIsaac] tear_redirect seed="
+                .. tostring(tear.InitSeed) .. " proxy=" .. tostring(proxy.InitSeed)
+                .. " angle=" .. tostring(angle)
+                .. " velocity=" .. tostring(tear.Velocity.X) .. ","
+                .. tostring(tear.Velocity.Y))
+        end
+    end
+
+    mod:AddCallback(ModCallbacks.MC_POST_TEAR_INIT, function(_, tear)
+        -- Regular Incubus tears bypass Familiar::FireProjectile but retain its
+        -- SpawnerEntity. Aim and visual scale must be set before first render.
+        local proxy = directProxy(tear.SpawnerEntity)
+        if proxy then redirectTear(tear, proxy) end
+    end)
+
+    mod:AddCallback(ModCallbacks.MC_POST_TEAR_UPDATE, function(_, tear)
+        if tear.FrameCount ~= 1 then return end
+        local proxy = directProxy(tear.SpawnerEntity)
+        local player = tear.Parent and tear.Parent:ToPlayer()
+        if not proxy or not player then return end
+        redirectTear(tear, proxy)
+        if firstScale(tear) then
+            tear.CollisionDamage = tear.CollisionDamage * correction(proxy)
+            if not tear:GetData().AscentionMiniIsaacNativeAimed then
+                tear.Scale = tear.Scale * TEAR_SCALE
+            end
+        end
+    end)
+
     mod:AddCallback(ModCallbacks.MC_POST_FAMILIAR_FIRE_PROJECTILE, function(_, tear)
-        local proxy = proxyOf(tear.SpawnerEntity or tear.Parent)
+        local proxy = proxyOf(tear.SpawnerEntity) or proxyOf(tear.Parent)
         if proxy and firstScale(tear) then
             local proxyData = proxy:GetData()
             local samples = proxyData.AscentionMiniIsaacTearSamples or 0
@@ -50,11 +111,10 @@ function Adapter.Register(mod)
                     .. " player_velocity=" .. tostring(proxy.Player and proxy.Player.Velocity.X)
                     .. "," .. tostring(proxy.Player and proxy.Player.Velocity.Y))
             end
-            if proxy.Player then
-                tear.Velocity = tear.Velocity - proxy.Player.Velocity * 1.2
-            end
             tear.CollisionDamage = tear.CollisionDamage * correction(proxy)
-            tear.Scale = tear.Scale * TEAR_SCALE
+            if not tear:GetData().AscentionMiniIsaacNativeAimed then
+                tear.Scale = tear.Scale * TEAR_SCALE
+            end
         end
     end, FamiliarVariant.INCUBUS)
 

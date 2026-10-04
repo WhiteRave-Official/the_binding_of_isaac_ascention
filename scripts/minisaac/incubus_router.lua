@@ -536,6 +536,16 @@ function Router.Register(mod)
                     .. " blocked_arg=" .. tostring(state.blocked_x) .. ","
                     .. tostring(state.blocked_y)
                     .. " input_reads=" .. tostring(state.input_reads)
+                    .. " projectiles=" .. tostring(state.projectiles)
+                    .. " external_projectiles=" .. tostring(state.external_projectiles)
+                    .. " scoped_aim=" .. tostring(state.scoped_aim_x) .. ","
+                    .. tostring(state.scoped_aim_y)
+                    .. " scoped_velocity=" .. tostring(state.scoped_velocity_x) .. ","
+                    .. tostring(state.scoped_velocity_y)
+                    .. " external_aim=" .. tostring(state.external_aim_x) .. ","
+                    .. tostring(state.external_aim_y)
+                    .. " external_velocity=" .. tostring(state.external_velocity_x) .. ","
+                    .. tostring(state.external_velocity_y)
                     .. " charge=" .. tostring(weapon:GetCharge()))
             end
         end

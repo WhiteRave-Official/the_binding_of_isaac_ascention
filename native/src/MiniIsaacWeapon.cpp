@@ -21,6 +21,11 @@ struct ProxyState {
     Vector afterFireDirection{ 0.0f, 0.0f };
     unsigned int releases = 0;
     unsigned int projectileCalls = 0;
+    unsigned int externalProjectileCalls = 0;
+    Vector scopedProjectileAim{ 0.0f, 0.0f };
+    Vector externalProjectileAim{ 0.0f, 0.0f };
+    Vector scopedProjectileVelocity{ 0.0f, 0.0f };
+    Vector externalProjectileVelocity{ 0.0f, 0.0f };
     unsigned int brimstoneCalls = 0;
     unsigned int techLaserCalls = 0;
     unsigned int techXCalls = 0;
@@ -131,6 +136,15 @@ int diagnostics(lua_State* state) {
     lua_pushnumber(state, proxy.afterFireDirection.y); lua_setfield(state, -2, "after_y");
     lua_pushinteger(state, proxy.releases); lua_setfield(state, -2, "releases");
     lua_pushinteger(state, proxy.projectileCalls); lua_setfield(state, -2, "projectiles");
+    lua_pushinteger(state, proxy.externalProjectileCalls); lua_setfield(state, -2, "external_projectiles");
+    lua_pushnumber(state, proxy.scopedProjectileAim.x); lua_setfield(state, -2, "scoped_aim_x");
+    lua_pushnumber(state, proxy.scopedProjectileAim.y); lua_setfield(state, -2, "scoped_aim_y");
+    lua_pushnumber(state, proxy.externalProjectileAim.x); lua_setfield(state, -2, "external_aim_x");
+    lua_pushnumber(state, proxy.externalProjectileAim.y); lua_setfield(state, -2, "external_aim_y");
+    lua_pushnumber(state, proxy.scopedProjectileVelocity.x); lua_setfield(state, -2, "scoped_velocity_x");
+    lua_pushnumber(state, proxy.scopedProjectileVelocity.y); lua_setfield(state, -2, "scoped_velocity_y");
+    lua_pushnumber(state, proxy.externalProjectileVelocity.x); lua_setfield(state, -2, "external_velocity_x");
+    lua_pushnumber(state, proxy.externalProjectileVelocity.y); lua_setfield(state, -2, "external_velocity_y");
     lua_pushinteger(state, proxy.brimstoneCalls); lua_setfield(state, -2, "brimstones");
     lua_pushinteger(state, proxy.techLaserCalls); lua_setfield(state, -2, "tech_lasers");
     lua_pushinteger(state, proxy.techXCalls); lua_setfield(state, -2, "tech_x");
@@ -255,12 +269,22 @@ HOOK_METHOD(Entity_Familiar, Shoot, () -> void) {
 }
 
 HOOK_METHOD(Entity_Familiar, FireProjectile, (const Vector& aimDirection, bool unknown) -> Entity_Tear*) {
-    if (registered(this) && firingProxy && inputDirection.x * inputDirection.x
-            + inputDirection.y * inputDirection.y > 0.001f) {
-        ++proxies.at(this).projectileCalls;
-        return super(inputDirection, unknown);
+    const bool managed = registered(this);
+    const bool controlled = firingProxy;
+    auto* tear = super(aimDirection, unknown);
+    if (managed && registered(this)) {
+        auto& proxy = proxies.at(this);
+        if (controlled) {
+            ++proxy.projectileCalls;
+            proxy.scopedProjectileAim = aimDirection;
+            if (tear) proxy.scopedProjectileVelocity = tear->_velocity;
+        } else {
+            ++proxy.externalProjectileCalls;
+            proxy.externalProjectileAim = aimDirection;
+            if (tear) proxy.externalProjectileVelocity = tear->_velocity;
+        }
     }
-    return super(aimDirection, unknown);
+    return tear;
 }
 
 HOOK_METHOD(Entity_Familiar, FireBrimstone, (const Vector& aimDirection, bool unknown) -> Entity_Laser*) {

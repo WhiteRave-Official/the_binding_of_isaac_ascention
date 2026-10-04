@@ -18,6 +18,40 @@ Mini Isaac damage and size are scaled by `scripts/minisaac/native_weapon_adapter
 The native route discards the vanilla Mini Isaac tear. In fallback mode,
 `combat.lua` replaces it with the selected weapon attack.
 
+## Native tear route and failure modes
+
+- `incubus_router.lua` creates and registers an invisible Incubus proxy for each
+  Mini Isaac. Its selected target is stored in `AscentionMiniIsaacAim`.
+- `MC_FAMILIAR_UPDATE` calls `native.TickProxy` for ordinary tears. Do not
+  return `true` from the proxy's `MC_PRE_FAMILIAR_UPDATE` for `WEAPON_TEARS`:
+  that suppressed all native tear emission in the in-game test. Calling
+  `Incubus.Shoot()` manually after `Weapon::Fire` did not restore the observed
+  behavior. Both experimental changes were removed to restore the last
+  user-confirmed working ordinary-tear path.
+- The native `Weapon::Fire` call creates ordinary tears, but these do **not**
+  pass through `Entity_Familiar::FireProjectile` or
+  `MC_POST_FAMILIAR_FIRE_PROJECTILE`. A nonzero `GetNumFired()` is not proof that
+  either of those hooks ran. Observed tears had the proxy as `SpawnerEntity` and
+  the player as `Parent`.
+- `native_weapon_adapter.lua` redirects those tears in `MC_POST_TEAR_INIT`.
+  It uses the first raw tear velocity per proxy/frame as the source direction,
+  preserving relative multishot spread. The size is reduced there to avoid a
+  visible full-size frame. Damage is scaled on the first tear update, after
+  the engine has finalized it.
+- Do not gate `MC_POST_TEAR_INIT` on the C++ `firingProxy` flag: in the tested
+  build it was already false when Lua saw tear initialization, and all
+  redirection stopped. A 72-pixel proximity gate also stopped redirection;
+  the initial position is not a reliable discriminator at that callback.
+- Split children may keep the proxy as `SpawnerEntity`. The working ordinary
+  tear path still redirects them and can move their spawn point away from the
+  impact. This is an open bug. Fix it separately without changing the proxy AI,
+  native shot timing, or ordinary tear routing.
+
+Last user-confirmed result: ordinary tears worked with the ungated init
+redirect, while split children appeared in wrong locations. This route is
+restored in source and DLL but has not yet been rechecked in game after the
+rollback. Test ordinary tears first; only then isolate the split bug.
+
 If Dynamic Minisaacs Forever is loaded, Ascention's combat dispatcher yields
 to it rather than changing its callbacks. Disable Dynamic to test the new
 implementation. The old compat files remain in the repository for comparison
