@@ -36,8 +36,11 @@ function Formation.Build(player, weaponType, velocity)
         }
     end
 
+    local backwardsAdded = false
+    local sidewaysAdded = 0
     if params:IsShootingBackwards() and #shots < MAX_SHOTS then
         shots[#shots + 1] = { offset = Vector.Zero, velocity = velocity:Rotated(180) }
+        backwardsAdded = true
     end
     if params:IsShootingSideways() then
         for _, angle in ipairs({ -90, 90 }) do
@@ -46,10 +49,11 @@ function Formation.Build(player, weaponType, velocity)
                     offset = Vector.Zero,
                     velocity = velocity:Rotated(angle),
                 }
+                sidewaysAdded = sidewaysAdded + 1
             end
         end
     end
-    return shots
+    return shots, backwardsAdded and sidewaysAdded == 2
 end
 
 return Formation

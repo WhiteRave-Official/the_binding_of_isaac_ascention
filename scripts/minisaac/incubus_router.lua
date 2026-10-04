@@ -145,6 +145,18 @@ local function proxyOf(mini)
     return proxy and proxy:Exists() and proxy:ToFamiliar() or nil
 end
 
+local function extraKnivesFlying(mini)
+    local proxy = proxyOf(mini)
+    local extras = proxy and proxy:GetData().AscentionMiniIsaacExtraKnives
+    if not extras then return false end
+    for _, pointer in pairs(extras) do
+        local entity = pointer and pointer.Ref
+        local knife = entity and entity:Exists() and entity:ToKnife()
+        if knife and knife:IsFlying() then return true end
+    end
+    return false
+end
+
 local function removeExtraKnives(proxy)
     local data = proxy:GetData()
     local extras = data.AscentionMiniIsaacExtraKnives
@@ -172,7 +184,7 @@ local function extraKnife(proxy, mini, mainKnife, index)
 end
 
 local function fireKnifeVolley(proxy, mini, mainKnife, aim)
-    local shots = Formation.Build(mini.Player, WeaponType.WEAPON_KNIFE, aim:Normalized())
+    local shots, fourWay = Formation.Build(mini.Player, WeaponType.WEAPON_KNIFE, aim:Normalized())
     local extras = proxy:GetData().AscentionMiniIsaacExtraKnives
     if extras then
         for index, pointer in pairs(extras) do
@@ -199,6 +211,7 @@ local function fireKnifeVolley(proxy, mini, mainKnife, aim)
             knife:Shoot(1.0, math.max(40, mini.Player.TearRange))
         end
     end
+    return fourWay
 end
 
 local function removeProxy(mini)
@@ -397,7 +410,7 @@ function Router.Register(mod)
             proxyData.AscentionMiniIsaacKnifeCharge = charge
             if target and charge >= math.max(1, math.ceil(weapon:GetMaxCharge())) then
                 proxyData.AscentionMiniIsaacKnifeCharge = 0
-                fireKnifeVolley(proxy, mini, knife, aim)
+                data.AscentionMiniIsaacKnifeFourWay = fireKnifeVolley(proxy, mini, knife, aim)
                 proxyData.AscentionMiniIsaacKnifeFlightFrame = Game():GetFrameCount()
                 data.AscentionMiniIsaacLastShotFrame = Game():GetFrameCount()
                 data.AscentionMiniIsaacLastShotVelocity = aim
@@ -565,10 +578,17 @@ function Router.Register(mod)
         local pointer = mini:GetData().AscentionMiniIsaacHeldKnife
         local entity = pointer and pointer.Ref
         local knife = entity and entity:Exists() and entity:ToKnife()
-        if knife and not knife:IsFlying() then
+        if knife then
+            local miniData = mini:GetData()
+            local mainFlying = knife:IsFlying()
+            local hideAll = miniData.AscentionMiniIsaacKnifeFourWay
+                and (mainFlying or extraKnivesFlying(mini))
+            if not hideAll then miniData.AscentionMiniIsaacKnifeFourWay = nil end
             local facing = knifeFacing(mini)
-            renderHeldKnife(knife, mini, facing)
-            if mini.Player and mini.Player:HasCollectible(LOKIS_HORNS) then
+            if not mainFlying and not hideAll then
+                renderHeldKnife(knife, mini, facing)
+            end
+            if mini.Player and mini.Player:HasCollectible(LOKIS_HORNS) and not hideAll then
                 for _, direction in ipairs(KNIFE_DIRECTIONS) do
                     if direction ~= facing then
                         renderHeldKnife(knife, mini, direction)
