@@ -4,6 +4,8 @@ local STATE_KEY = "AscentionMiniIsaacChargeVisual"
 local BODY_STATE_KEY = "AscentionMiniIsaacBodySheet"
 
 local BLACK_BODY_SHEET = "gfx/familiar/minisaac_charge/familiar_minisaac_black.png"
+local GEBURAH_BODY_SHEET = "gfx/familiar/minisaac/familiar_minisaac_geburah.png"
+local GEBURAH_BLACK_BODY_SHEET = "gfx/familiar/minisaac/familiar_minisaac_geburah_black.png"
 local DEFAULT_BODY_SHEET = "gfx/familiar/familiar_minisaac.png"
 local RELEASE_FRAMES = 4
 local RELEASE_SHOT_FRAMES = 2
@@ -12,10 +14,33 @@ local reportedFirstRender = false
 local MONSTROS_LUNG = CollectibleType.COLLECTIBLE_MONSTROS_LUNG
 local TECHNOLOGY = CollectibleType.COLLECTIBLE_TECHNOLOGY
 local CHOCOLATE_MILK = CollectibleType.COLLECTIBLE_CHOCOLATE_MILK
+local BRIMSTONE = CollectibleType.COLLECTIBLE_BRIMSTONE
+local GEBURAH = Isaac.GetPlayerTypeByName("Geburah")
+
+local COSTUME_SHEETS = {
+    technology = {
+        geburah = "familiar_minisaac_technology_costume_geburah.png",
+        geburahBlack = "familiar_minisaac_technology_costume_geburah_black.png",
+    },
+    monstros_lung = {
+        black = "familiar_minisaac_monsto's_lung_costume_black.png",
+        geburah = "familiar_minisaac_monsto's_lung_costume_geburah.png",
+        geburahBlack = "familiar_minisaac_monsto's_lung_costume_geburah_black.png",
+    },
+    brimstone = {
+        geburah = "familiar_minisaac_brimstone_costume_geburah.png",
+    },
+    chocolate_milk = {
+        black = "familiar_minisaac_chocolate_milk_costume_black.png",
+        geburah = "familiar_minisaac_chocolate_milk_costume_geburah.png",
+        geburahBlack = "familiar_minisaac_chocolate_milk_costume_geburah_black.png",
+    },
+}
 
 local profiles = {
     {
         id = "technology_monstros_lung",
+        costume = "technology",
         spritePath = "gfx/familiar/minisaac_charge/technology.anm2",
         releaseFrameCount = 1,
         matches = function(player)
@@ -25,6 +50,7 @@ local profiles = {
     },
     {
         id = "technology_chocolate_milk",
+        costume = "technology",
         spritePath = "gfx/familiar/minisaac_charge/technology.anm2",
         releaseFrameCount = 1,
         matches = function(player)
@@ -34,18 +60,21 @@ local profiles = {
     },
     {
         id = "monstros_lung",
+        costume = "monstros_lung",
         weaponType = WeaponType.WEAPON_MONSTROS_LUNGS,
         spritePath = "gfx/familiar/minisaac_charge/monstros_lung.anm2",
         releaseFrameCount = 2,
     },
     {
         id = "brimstone",
+        costume = "brimstone",
         weaponType = WeaponType.WEAPON_BRIMSTONE,
         spritePath = "gfx/familiar/minisaac_charge/brimstone.anm2",
         releaseFrameCount = 2,
     },
     {
         id = "chocolate_milk",
+        costume = "chocolate_milk",
         spritePath = "gfx/familiar/minisaac_charge/chocolate_milk.anm2",
         releaseFrameCount = 2,
         matches = function(player)
@@ -54,6 +83,7 @@ local profiles = {
     },
     {
         id = "technology",
+        costume = "technology",
         weaponType = WeaponType.WEAPON_LASER,
         spritePath = "gfx/familiar/minisaac_charge/technology.anm2",
         staticCharge = true,
@@ -73,6 +103,22 @@ end
 
 local function getChargeDelay(profile, player)
     return math.max(1, math.floor(player.MaxFireDelay + 1))
+end
+
+local function isGeburah(player)
+    return player and player:GetPlayerType() == GEBURAH
+end
+
+local function costumeSheet(profile, player)
+    local variants = COSTUME_SHEETS[profile.costume]
+    local black = player:HasCollectible(BRIMSTONE)
+    local filename
+    if isGeburah(player) then
+        filename = black and variants.geburahBlack or variants.geburah
+    elseif black then
+        filename = variants.black
+    end
+    return filename and "gfx/familiar/minisaac_charge/" .. filename or nil
 end
 
 local function directionName(direction)
@@ -128,48 +174,89 @@ local function getOrCreateState(familiar, profile)
     return state
 end
 
+local function updateCostumeSheet(state, player)
+    local sheet = costumeSheet(state.profile, player)
+    if state.sheet == sheet then return end
+    if sheet then
+        state.sprite:ReplaceSpritesheet(0, sheet, true)
+    else
+        state.sprite:Load(state.profile.spritePath, true)
+    end
+    state.sheet = sheet
+end
+
 local function restoreBodySheet(familiar)
     local data = familiar:GetData()
     local bodyState = data[BODY_STATE_KEY]
     if not bodyState then return end
 
-    local original = bodyState.originalSheet
-    if original and original:lower():match("familiar_minisaac_black%.png$") then
-        original = DEFAULT_BODY_SHEET
+    local sprite = familiar:GetSprite()
+    for layerId = 0, 1 do
+        local originals = bodyState.originalSheets
+        local original = originals and originals[layerId] or bodyState.originalSheet
+        if original and (original:lower():match("familiar_minisaac_black%.png$")
+            or original:lower():match("familiar_minisaac_geburah.*%.png$")) then
+            original = DEFAULT_BODY_SHEET
+        end
+        if original then sprite:ReplaceSpritesheet(layerId, original, layerId == 1) end
     end
-    familiar:GetSprite():ReplaceSpritesheet(0, original, true)
     data[BODY_STATE_KEY] = nil
 end
 
-local function updateBodySheet(familiar, profile)
+local function updateBodySheet(familiar, player, profile)
     local data = familiar:GetData()
-    if profile.id ~= "brimstone" then
+    local black = player and player:HasCollectible(BRIMSTONE)
+    local sheet
+    if isGeburah(player) then
+        sheet = black and GEBURAH_BLACK_BODY_SHEET or GEBURAH_BODY_SHEET
+    elseif profile and profile.id == "brimstone" then
+        sheet = BLACK_BODY_SHEET
+    end
+    if not sheet then
         restoreBodySheet(familiar)
         return
     end
 
-    if data[BODY_STATE_KEY] then
-        return
-    end
-
+    local state = data[BODY_STATE_KEY]
+    if state and state.sheet == sheet and state.originalSheets then return end
     local sprite = familiar:GetSprite()
-    local layer = sprite:GetLayer(0)
-    data[BODY_STATE_KEY] = {
-        originalSheet = layer:GetSpritesheetPath(),
-    }
-    sprite:ReplaceSpritesheet(0, BLACK_BODY_SHEET, true)
+    if not state then
+        state = { originalSheets = {} }
+        for layerId = 0, 1 do
+            local layer = sprite:GetLayer(layerId)
+            state.originalSheets[layerId] = layer and layer:GetSpritesheetPath()
+        end
+        data[BODY_STATE_KEY] = state
+    elseif not state.originalSheets then
+        state.originalSheets = {
+            [0] = state.originalSheet,
+            [1] = DEFAULT_BODY_SHEET,
+        }
+    end
+    for layerId = 0, 1 do
+        sprite:ReplaceSpritesheet(layerId, sheet, layerId == 1)
+    end
+    state.sheet = sheet
+    if isGeburah(player) then
+        local body = sprite:GetLayer(0)
+        local head = sprite:GetLayer(1)
+        Isaac.DebugString("[AscentionMiniIsaac] geburah_sheet mini="
+            .. tostring(familiar.InitSeed) .. " body="
+            .. tostring(body and body:GetSpritesheetPath()) .. " head="
+            .. tostring(head and head:GetSpritesheetPath()))
+    end
 end
 local function updateFamiliar(_, familiar)
     local player = familiar.Player
     local profile = player and getProfile(player)
+    updateBodySheet(familiar, player, profile)
     if not profile then
         familiar:GetData()[STATE_KEY] = nil
-        restoreBodySheet(familiar)
         return
     end
 
-    updateBodySheet(familiar, profile)
     local state = getOrCreateState(familiar, profile)
+    updateCostumeSheet(state, player)
     local data = familiar:GetData()
     state.fallbackCharge = nil
     state.fallbackMax = nil
