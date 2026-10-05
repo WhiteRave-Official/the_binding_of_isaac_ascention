@@ -416,10 +416,15 @@ function Router.Register(mod)
         proxy.Velocity = Vector.Zero
         local weapon = proxy:GetWeapon()
         local kind = weapon and weapon:GetWeaponType()
-        if kind == WeaponType.WEAPON_TEARS then
+        local chargedLaser = kind == WeaponType.WEAPON_LASER
+            and mini.Player:HasCollectible(TECHNOLOGY)
+            and (mini.Player:HasCollectible(MONSTROS_LUNG)
+                or mini.Player:HasCollectible(CHOCOLATE_MILK))
+        if kind == WeaponType.WEAPON_TEARS
+            or (kind == WeaponType.WEAPON_LASER and not chargedLaser) then
             local target = targetFor(mini)
             if not target then
-                -- Only skip idle AI. Skipping it during combat stops native tears.
+                -- Skip idle AI before it can borrow the player's firing input.
                 mini:GetData().AscentionMiniIsaacAim = nil
                 local proxyData = proxy:GetData()
                 if not proxyData.AscentionMiniIsaacIdleGuardLogged then
