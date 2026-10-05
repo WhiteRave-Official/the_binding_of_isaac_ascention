@@ -11,6 +11,7 @@ local BOUNCE_FRAMES = 8
 local tearVisualSamples = 0
 local recentGoldenDeaths = {}
 local activeSplashes = {}
+local markedTarget = nil
 
 local function validEnemy(entity)
     local npc = entity and entity:ToNPC()
@@ -100,6 +101,10 @@ function EyeOfSun.IsMarked(entity)
 end
 
 function EyeOfSun.Register(mod)
+    mod:AddCallback(ModCallbacks.MC_POST_GAME_STARTED, function()
+        markedTarget = nil
+    end)
+
     mod:AddCallback(ModCallbacks.MC_POST_TEAR_INIT, function(_, tear)
         if isGeburahTear(tear) then markTear(tear) end
     end)
@@ -181,6 +186,7 @@ function EyeOfSun.Register(mod)
     mod:AddCallback(ModCallbacks.MC_POST_NEW_ROOM, function()
         activeSplashes = {}
         recentGoldenDeaths = {}
+        markedTarget = nil
     end)
 
     mod:AddCallback(ModCallbacks.MC_ENTITY_TAKE_DMG,
@@ -207,6 +213,14 @@ function EyeOfSun.Register(mod)
             if state.stacks < MAX_STACKS then
                 state.stacks = state.stacks + 1
                 state.bounce = BOUNCE_FRAMES
+                if state.stacks == MAX_STACKS then
+                    local previous = markedTarget and markedTarget.Ref
+                    if previous and previous:Exists()
+                        and GetPtrHash(previous) ~= GetPtrHash(entity) then
+                        previous:GetData()[STATE_KEY] = nil
+                    end
+                    markedTarget = EntityPtr(entity)
+                end
             end
         end, EntityType.ENTITY_NPC)
 

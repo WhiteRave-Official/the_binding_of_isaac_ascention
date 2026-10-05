@@ -5,6 +5,8 @@ local EyeOfSun = include("scripts.characters.eye_of_sun")
 local PROXY_KEY = "AscentionMiniIsaacWeaponProxy"
 local OWNER_KEY = "AscentionMiniIsaacProxyOwner"
 local TARGET_REFRESH_INTERVAL = 6
+local SHOT_CLEARANCE = 10
+local GRID_SAMPLE_STEP = 12
 local native = AscentionNative
 local LOKIS_HORNS = CollectibleType.COLLECTIBLE_LOKIS_HORNS or 87
 local MONSTROS_LUNG = CollectibleType.COLLECTIBLE_MONSTROS_LUNG
@@ -300,6 +302,72 @@ end
 
 Router.TargetFor = targetFor
 
+local spectralBypassSamples = 0
+
+local function attackTargetFor(mini, proxy)
+    if proxy:GetData().AscentionMiniIsaacSpectralTears then
+        if spectralBypassSamples < 8 then
+            spectralBypassSamples = spectralBypassSamples + 1
+            Isaac.DebugString("[AscentionMiniIsaac] spectral_bypass mini="
+                .. tostring(mini.InitSeed)
+                .. " owner_spectral=" .. tostring(proxy.Player
+                    and (proxy.Player.TearFlags & TearFlags.TEAR_SPECTRAL) ~= 0))
+        end
+        return targetFor(mini)
+    end
+
+    local data = mini:GetData()
+    local frame = Game():GetFrameCount()
+    local room = Game():GetRoom()
+    local function visible(entity)
+        if not validTarget(entity) then return false end
+        local direction = entity.Position - mini.Position
+        if not room:CheckLine(mini.Position, entity.Position,
+            LineCheckMode.PROJECTILE, 0, false, false) then return false end
+        local distance = direction:Length()
+        if distance < 1 then return true end
+        local side = Vector(-direction.Y, direction.X):Resized(SHOT_CLEARANCE)
+        if not room:CheckLine(mini.Position + side, entity.Position + side,
+                LineCheckMode.PROJECTILE, 0, false, false)
+            or not room:CheckLine(mini.Position - side, entity.Position - side,
+                LineCheckMode.PROJECTILE, 0, false, false) then return false end
+        local step = direction:Resized(GRID_SAMPLE_STEP)
+        for sample = 1, math.floor((distance - GRID_SAMPLE_STEP) / GRID_SAMPLE_STEP) do
+            if room:GetGridCollisionAtPos(mini.Position + step * sample)
+                >= GridCollisionClass.COLLISION_OBJECT then
+                return false
+            end
+        end
+        return true
+    end
+    local target = data.AscentionMiniIsaacAttackTarget
+    if frame < (data.AscentionMiniIsaacAttackTargetRefresh or 0) then
+        if not target or visible(target) then return target end
+    end
+
+    local bestDistance = math.huge
+    local bestSeed = math.huge
+    local bestMarked = false
+    target = nil
+    for _, entity in ipairs(Isaac.GetRoomEntities()) do
+        if visible(entity) then
+            local distance = mini.Position:DistanceSquared(entity.Position)
+            local marked = EyeOfSun.IsMarked(entity)
+            if (marked and not bestMarked)
+                or (marked == bestMarked and (distance < bestDistance
+                    or (distance == bestDistance and entity.InitSeed < bestSeed))) then
+                target = entity
+                bestDistance = distance
+                bestSeed = entity.InitSeed
+                bestMarked = marked
+            end
+        end
+    end
+    data.AscentionMiniIsaacAttackTarget = target
+    data.AscentionMiniIsaacAttackTargetRefresh = frame + TARGET_REFRESH_INTERVAL
+    return target
+end
+
 function Router.IsManaging(mini)
     return active() and validMini(mini)
 end
@@ -314,6 +382,8 @@ function Router.Register(mod)
         Isaac.DebugString("[AscentionMiniIsaac] native module unavailable; manual combat remains active")
         return
     end
+
+    local blockedTargetSamples = 0
 
     local function clearProxies()
         for _, entity in ipairs(Isaac.FindByType(EntityType.ENTITY_FAMILIAR,
@@ -423,24 +493,31 @@ function Router.Register(mod)
         proxy.Velocity = Vector.Zero
         local weapon = proxy:GetWeapon()
         local kind = weapon and weapon:GetWeaponType()
+        local target = attackTargetFor(mini, proxy)
+        if not target then
+            mini:GetData().AscentionMiniIsaacAim = nil
+            if blockedTargetSamples < 8 then
+                local tracked = targetFor(mini)
+                if tracked then
+                    blockedTargetSamples = blockedTargetSamples + 1
+                    Isaac.DebugString("[AscentionMiniIsaac] blocked_target mini="
+                        .. tostring(mini.InitSeed)
+                        .. " weapon=" .. tostring(kind)
+                        .. " spectral=" .. tostring(proxy:GetData().AscentionMiniIsaacSpectralTears)
+                        .. " owner_spectral=" .. tostring((mini.Player.TearFlags
+                            & TearFlags.TEAR_SPECTRAL) ~= 0)
+                        .. " target=" .. tostring(tracked.InitSeed))
+                end
+            end
+            native.TickProxy(proxy, 0, 0, false)
+            return true
+        end
         local chargedLaser = kind == WeaponType.WEAPON_LASER
             and mini.Player:HasCollectible(TECHNOLOGY)
             and (mini.Player:HasCollectible(MONSTROS_LUNG)
                 or mini.Player:HasCollectible(CHOCOLATE_MILK))
         if kind == WeaponType.WEAPON_TEARS
             or (kind == WeaponType.WEAPON_LASER and not chargedLaser) then
-            local target = targetFor(mini)
-            if not target then
-                -- Skip idle AI before it can borrow the player's firing input.
-                mini:GetData().AscentionMiniIsaacAim = nil
-                local proxyData = proxy:GetData()
-                if not proxyData.AscentionMiniIsaacIdleGuardLogged then
-                    proxyData.AscentionMiniIsaacIdleGuardLogged = true
-                    Isaac.DebugString("[AscentionMiniIsaac] idle_guard proxy="
-                        .. tostring(proxy.InitSeed))
-                end
-                return true
-            end
             mini:GetData().AscentionMiniIsaacAim = target.Position - mini.Position
         end
         if kind == WeaponType.WEAPON_KNIFE then
@@ -475,7 +552,6 @@ function Router.Register(mod)
                 if knife:IsFlying() then return end
             end
 
-            local target = targetFor(mini)
             local aim = target and (target.Position - mini.Position) or Vector.Zero
             data.AscentionMiniIsaacAim = target and aim or nil
             local charge = target and (proxyData.AscentionMiniIsaacKnifeCharge or 0) + 1 or 0
@@ -502,7 +578,6 @@ function Router.Register(mod)
             and mini.Player:HasCollectible(CHOCOLATE_MILK)
         if kind == WeaponType.WEAPON_TECH_X or chargedTechnology
             or chargedChocolateLaser or chargedChocolate then
-            local target = targetFor(mini)
             local aim = target and (target.Position - mini.Position) or Vector.Zero
             local data = mini:GetData()
             data.AscentionMiniIsaacAim = target and aim or nil
@@ -585,7 +660,7 @@ function Router.Register(mod)
         proxy.Position = mini.Position
         proxy.Velocity = Vector.Zero
 
-        local target = targetFor(mini)
+        local target = attackTargetFor(mini, proxy)
         local aim = target and (target.Position - mini.Position) or Vector.Zero
         mini:GetData().AscentionMiniIsaacAim = target and aim or nil
         local weapon = proxy:GetWeapon()

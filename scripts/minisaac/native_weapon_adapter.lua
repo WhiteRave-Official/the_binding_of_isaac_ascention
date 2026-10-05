@@ -94,6 +94,10 @@ function Adapter.Register(mod)
         -- Regular Incubus tears bypass Familiar::FireProjectile but retain its
         -- SpawnerEntity. Aim and visual scale must be set before first render.
         local proxy = directProxy(tear.SpawnerEntity)
+        if proxy then
+            proxy:GetData().AscentionMiniIsaacSpectralTears =
+                tear:HasTearFlags(TearFlags.TEAR_SPECTRAL)
+        end
         if proxy then redirectTear(tear, proxy, "init") end
         if proxy and chargedTechnology(proxy.Player) and chargedTearSamples < 12 then
             chargedTearSamples = chargedTearSamples + 1
@@ -116,6 +120,10 @@ function Adapter.Register(mod)
     mod:AddCallback(ModCallbacks.MC_POST_TEAR_UPDATE, function(_, tear)
         if tear.FrameCount ~= 1 then return end
         local proxy = directProxy(tear.SpawnerEntity)
+        if proxy then
+            proxy:GetData().AscentionMiniIsaacSpectralTears =
+                tear:HasTearFlags(TearFlags.TEAR_SPECTRAL)
+        end
         local player = tear.Parent and tear.Parent:ToPlayer()
         if not proxy or not player then return end
         redirectTear(tear, proxy, "post_update")
