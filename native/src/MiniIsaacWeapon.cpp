@@ -36,6 +36,7 @@ struct ProxyState {
     Vector externalProjectileVelocity{ 0.0f, 0.0f };
     unsigned int brimstoneCalls = 0;
     unsigned int techLaserCalls = 0;
+    unsigned int blockedTechLaserCalls = 0;
     unsigned int techXCalls = 0;
     unsigned int knifeCalls = 0;
     Vector ownerWeaponDirection{ 0.0f, 0.0f };
@@ -165,6 +166,7 @@ int diagnostics(lua_State* state) {
     lua_pushnumber(state, proxy.externalProjectileVelocity.y); lua_setfield(state, -2, "external_velocity_y");
     lua_pushinteger(state, proxy.brimstoneCalls); lua_setfield(state, -2, "brimstones");
     lua_pushinteger(state, proxy.techLaserCalls); lua_setfield(state, -2, "tech_lasers");
+    lua_pushinteger(state, proxy.blockedTechLaserCalls); lua_setfield(state, -2, "blocked_tech_lasers");
     lua_pushinteger(state, proxy.techXCalls); lua_setfield(state, -2, "tech_x");
     lua_pushinteger(state, proxy.knifeCalls); lua_setfield(state, -2, "knives");
     lua_pushnumber(state, proxy.ownerWeaponDirection.x); lua_setfield(state, -2, "owner_dir_x");
@@ -345,6 +347,10 @@ HOOK_METHOD(Entity_Familiar, FireBrimstone, (const Vector& aimDirection, bool un
 }
 
 HOOK_METHOD(Entity_Familiar, FireTechLaser, (const Vector& aimDirection) -> Entity_Laser*) {
+    if (registered(this) && !firingProxy) {
+        ++proxies.at(this).blockedTechLaserCalls;
+        return nullptr;
+    }
     if (registered(this) && firingProxy && inputDirection.x * inputDirection.x
             + inputDirection.y * inputDirection.y > 0.001f) {
         ++proxies.at(this).techLaserCalls;

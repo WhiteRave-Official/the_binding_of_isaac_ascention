@@ -50,6 +50,7 @@ function Adapter.Register(mod)
     local chargedLaserSamples = 0
     local laserDamageSamples = 0
     local laserHitSamples = { normal = 0, chocolate = 0 }
+    local laserAimSamples = 0
     local proxyBySeed = {}
     local function redirectTear(tear, proxy, stage)
         local data = tear:GetData()
@@ -178,9 +179,40 @@ function Adapter.Register(mod)
             data.AscentionMiniIsaacLaserFactor = correction(proxy)
             data.AscentionMiniIsaacLaserChocolate = proxy.Player:HasCollectible(
                 CollectibleType.COLLECTIBLE_CHOCOLATE_MILK)
+            local weapon = proxy:GetWeapon()
+            if weapon and weapon:GetWeaponType() == WeaponType.WEAPON_LASER
+                and not proxy.Player:HasCollectible(MONSTROS_LUNG) then
+                local owner = proxy:GetData().AscentionMiniIsaacProxyOwner
+                local mini = owner and owner.Ref
+                local aim = mini and mini:Exists()
+                    and mini:GetData().AscentionMiniIsaacAim
+                if aim and aim:LengthSquared() > 0.01 then
+                    local proxyData = proxy:GetData()
+                    local frame = Game():GetFrameCount()
+                    if proxyData.AscentionMiniIsaacLaserSourceFrame ~= frame then
+                        proxyData.AscentionMiniIsaacLaserSourceFrame = frame
+                        proxyData.AscentionMiniIsaacLaserSourceAngle = laser.AngleDegrees
+                    end
+                    local angle = aim:GetAngleDegrees()
+                        + laser.AngleDegrees
+                        - proxyData.AscentionMiniIsaacLaserSourceAngle
+                    data.AscentionMiniIsaacLaserAimAngle = angle
+                    if laserAimSamples < 12 then
+                        laserAimSamples = laserAimSamples + 1
+                        Isaac.DebugString("[AscentionMiniIsaac] technology_laser_aim seed="
+                            .. tostring(laser.InitSeed)
+                            .. " original=" .. tostring(laser.AngleDegrees)
+                            .. " target=" .. tostring(angle)
+                            .. " scope=" .. tostring(AscentionNative
+                                and AscentionNative.FiringProxySeed
+                                and AscentionNative.FiringProxySeed() or 0))
+                    end
+                    laser.AngleDegrees = angle
+                    laser.LastAngleDegrees = angle
+                end
+            end
             laser:SetScale(laser:GetScale() * LASER_SCALE)
             laser:ResetSpriteScale()
-            local weapon = proxy:GetWeapon()
             if weapon and weapon:GetWeaponType() == WeaponType.WEAPON_LASER
                 and laserDamageSamples < 8 then
                 laserDamageSamples = laserDamageSamples + 1
@@ -193,6 +225,16 @@ function Adapter.Register(mod)
         end
         return proxy
     end
+    local function lockLaserAim(_, laser)
+        if laser.FrameCount > 2 then return end
+        local angle = laser:GetData().AscentionMiniIsaacLaserAimAngle
+        if angle then
+            laser.AngleDegrees = angle
+            laser.LastAngleDegrees = angle
+        end
+    end
+    mod:AddCallback(ModCallbacks.MC_PRE_LASER_UPDATE, lockLaserAim)
+    mod:AddCallback(ModCallbacks.MC_POST_LASER_UPDATE, lockLaserAim)
     mod:AddCallback(ModCallbacks.MC_POST_LASER_INIT, function(_, laser)
         local spawner = laser.SpawnerEntity
         local parent = laser.Parent

@@ -625,6 +625,8 @@ function Router.Register(mod)
                     .. tostring(state.external_aim_y)
                     .. " external_velocity=" .. tostring(state.external_velocity_x) .. ","
                     .. tostring(state.external_velocity_y)
+                    .. " tech_lasers=" .. tostring(state.tech_lasers)
+                    .. " blocked_tech_lasers=" .. tostring(state.blocked_tech_lasers)
                     .. " charge=" .. tostring(weapon:GetCharge()))
             end
         end
