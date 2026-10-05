@@ -1,8 +1,5 @@
 # The Binding Of Isaac - Ascention
 
-Adds Geburah, Arclight, Golden Eye, Empress's Tiara, a Revelation rework, and
-custom Mini Isaac combat.
-
 ## Installation (Windows)
 
 1. Install Repentance+ and REPENTOGON.
