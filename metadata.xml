@@ -4,7 +4,7 @@
     <directory>the_binding_of_isaac_ascention</directory>
     <id>0</id>
     <description>Play as Geburah with golden tears, the Eye of the Sun and her Empress's Tiara guardians. Adds Arclight and Golden Eye, plus a Revelation rework and custom Mini Isaac combat. Requires Repentance+, REPENTOGON and Windows. IMPORTANT: Workshop cannot distribute the required native module. Download Ascention Native Setup from https://github.com/WhiteRave-Official/the_binding_of_isaac_ascention/releases and run it after subscribing and after each mod update. The installer checks REPENTOGON compatibility before installing.</description>
-    <version>0.2.0</version>
+    <version>0.5.0</version>
     <visibility>Private</visibility>
     <tag id="Lua"/>
 </metadata>

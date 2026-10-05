@@ -34,7 +34,7 @@ internal static class AscentionNativeSetup
 
             string runtime = Path.Combine(game, "repentogon", "zhlREPENTOGON.dll");
             if (!File.Exists(runtime) || !Hash(runtime).Equals(RuntimeHash, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("Unsupported REPENTOGON build. No files were changed. This installer only supports the build used for Ascention 0.2.0.");
+                throw new InvalidOperationException("Unsupported REPENTOGON build. No files were changed. This installer only supports the build used for Ascention 0.5.0.");
 
             byte[] payload;
             using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(ResourceName))
