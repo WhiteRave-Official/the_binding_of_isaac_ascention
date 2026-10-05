@@ -82,7 +82,32 @@ local function evaluateStats(_, player, cacheFlag)
     end
 end
 
-function Geburah.Register(mod)
+function Geburah.Register(mod, tiaraId)
+    local runStarted = false
+
+    local function giveStartingTiara(player)
+        if isGeburah(player) and tiaraId > 0
+            and not player:HasCollectible(tiaraId) then
+            player:AddCollectible(tiaraId, 2, true)
+        end
+    end
+
+    mod:AddCallback(ModCallbacks.MC_POST_GAME_STARTED, function(_, continued)
+        runStarted = true
+        if continued then return end
+        for index = 0, Game():GetNumPlayers() - 1 do
+            giveStartingTiara(Isaac.GetPlayer(index))
+        end
+    end)
+
+    mod:AddCallback(ModCallbacks.MC_POST_PLAYER_INIT, function(_, player)
+        if runStarted then giveStartingTiara(player) end
+    end)
+
+    mod:AddCallback(ModCallbacks.MC_PRE_GAME_EXIT, function()
+        runStarted = false
+    end)
+
     mod:AddCallback(ModCallbacks.MC_EVALUATE_CACHE, evaluateStats)
     mod:AddCallback(ModCallbacks.MC_POST_PLAYER_UPDATE, updateHairCostume)
 end

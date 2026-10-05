@@ -318,7 +318,7 @@ local function updateFamiliar(_, familiar)
     state.lastShotFrame = shotFrame
 end
 
-local function renderFamiliar(_, familiar)
+local function renderFamiliar(_, familiar, renderOffset)
     local state = familiar:GetData()[STATE_KEY]
     if not state then
         return
@@ -376,6 +376,7 @@ local function renderFamiliar(_, familiar)
     state.sprite.Color = familiarColor
 
     local position = Isaac.WorldToRenderPosition(familiar.Position + familiar.PositionOffset)
+        + renderOffset
     state.sprite:Render(position)
 end
 

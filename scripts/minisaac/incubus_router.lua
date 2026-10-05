@@ -1,5 +1,6 @@
 local Router = {}
 local Formation = include("scripts.minisaac.formation")
+local EyeOfSun = include("scripts.characters.eye_of_sun")
 
 local PROXY_KEY = "AscentionMiniIsaacWeaponProxy"
 local OWNER_KEY = "AscentionMiniIsaacProxyOwner"
@@ -67,7 +68,7 @@ local function heldKnifeSprite(knife)
     return sprite
 end
 
-local function renderHeldKnife(knife, mini, direction)
+local function renderHeldKnife(knife, mini, direction, renderOffset)
     local sprite = heldKnifeSprite(knife)
     sprite.Rotation = HELD_KNIFE_ROTATIONS[direction]
     -- Flip before rotation so the left-facing blade mirrors the right-facing one.
@@ -75,7 +76,7 @@ local function renderHeldKnife(knife, mini, direction)
     sprite.Scale = Vector(knife.Scale * knife.SpriteScale.X,
         knife.Scale * knife.SpriteScale.Y)
     sprite:Render(Isaac.WorldToRenderPosition(mini.Position + mini.PositionOffset)
-        + HELD_KNIFE_OFFSETS[direction])
+        + renderOffset + HELD_KNIFE_OFFSETS[direction])
 end
 
 local function setNativeKnifeVisible(knife, visible)
@@ -276,15 +277,19 @@ local function targetFor(mini)
 
     local bestDistance = math.huge
     local bestSeed = math.huge
+    local bestMarked = false
     target = nil
     for _, entity in ipairs(Isaac.GetRoomEntities()) do
         if validTarget(entity) then
             local distance = mini.Position:DistanceSquared(entity.Position)
-            if distance < bestDistance
-                or (distance == bestDistance and entity.InitSeed < bestSeed) then
+            local marked = EyeOfSun.IsMarked(entity)
+            if (marked and not bestMarked)
+                or (marked == bestMarked and (distance < bestDistance
+                    or (distance == bestDistance and entity.InitSeed < bestSeed))) then
                 target = entity
                 bestDistance = distance
                 bestSeed = entity.InitSeed
+                bestMarked = marked
             end
         end
     end
@@ -702,7 +707,7 @@ function Router.Register(mod)
         setNativeKnifeVisible(knife, knife:IsFlying())
     end)
 
-    mod:AddCallback(ModCallbacks.MC_PRE_FAMILIAR_RENDER, function(_, mini)
+    mod:AddCallback(ModCallbacks.MC_PRE_FAMILIAR_RENDER, function(_, mini, renderOffset)
         if not Router.IsManaging(mini) then return end
         local pointer = mini:GetData().AscentionMiniIsaacHeldKnife
         local entity = pointer and pointer.Ref
@@ -715,12 +720,12 @@ function Router.Register(mod)
             if not hideAll then miniData.AscentionMiniIsaacKnifeFourWay = nil end
             local facing = knifeFacing(mini)
             if not mainFlying and not hideAll then
-                renderHeldKnife(knife, mini, facing)
+                renderHeldKnife(knife, mini, facing, renderOffset)
             end
             if mini.Player and mini.Player:HasCollectible(LOKIS_HORNS) and not hideAll then
                 for _, direction in ipairs(KNIFE_DIRECTIONS) do
                     if direction ~= facing then
-                        renderHeldKnife(knife, mini, direction)
+                        renderHeldKnife(knife, mini, direction, renderOffset)
                     end
                 end
             end
