@@ -293,6 +293,8 @@ local function targetFor(mini)
     return target
 end
 
+Router.TargetFor = targetFor
+
 function Router.IsManaging(mini)
     return active() and validMini(mini)
 end
