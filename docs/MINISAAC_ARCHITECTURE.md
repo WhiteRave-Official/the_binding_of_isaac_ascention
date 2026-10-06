@@ -11,6 +11,23 @@ once when a charged attack is released, not every tick.
 Isaac AI handles movement; Spirit Sword alone adjusts velocity toward melee
 range. `scripts/minisaac/formation.lua` builds its multishot formation.
 
+Spirit Sword accumulates an independent full charge like the knife path; it
+does not call `Weapon::Fire` while charging, because that produced repeated
+quick swings. At full charge it performs a scoped press/release pair through
+the proxy weapon. The game's Spirit Sword press creates the sword and clears
+`Weapon::_charge`; its release requires charge >= `4 * maxFireDelay` to take
+the spin branch. We restore full charge between those native calls, rather
+than changing the already-created sword's flags in a post-fire callback.
+The Spirit Sword proxy fires from `MC_PRE_FAMILIAR_UPDATE` and returns `true`,
+skipping the vanilla Incubus update that otherwise consumes player input.
+The earlier `Familiar::Shoot()` attempt did not create swords; a separate
+`Weapon::FireSword` hook caused a native crash and was removed. The old
+managed manual sword attack was removed because it bypassed native synergies. The
+`MC_POST_FIRE_SWORD` adapter tags native swords and scales final hit damage to
+15% of player damage after the game's sword multipliers. Diagnostics expose
+`spirit_sword_charge`, `spirit_sword_attempts`, and shots on each edge; verify these alongside
+`spirit_sword_native` in the next in-game log before treating this route as confirmed.
+
 `scripts/golden_eye_weapon_adapter.lua` remains specific to Golden Eye. Native
 Mini Isaac damage and size are scaled by `scripts/minisaac/native_weapon_adapter.lua`.
 `scripts/minisaac/charge_visuals.lua` renders Mini Isaac costumes.

@@ -516,7 +516,8 @@ function Router.Register(mod)
             and mini.Player:HasCollectible(TECHNOLOGY)
             and (mini.Player:HasCollectible(MONSTROS_LUNG)
                 or mini.Player:HasCollectible(CHOCOLATE_MILK))
-        if kind == WeaponType.WEAPON_TEARS
+        if kind == WeaponType.WEAPON_SPIRIT_SWORD
+            or kind == WeaponType.WEAPON_TEARS
             or (kind == WeaponType.WEAPON_LASER and not chargedLaser) then
             mini:GetData().AscentionMiniIsaacAim = target.Position - mini.Position
         end
@@ -568,6 +569,17 @@ function Router.Register(mod)
             return true
         end
         removeExtraKnives(proxy)
+        if kind == WeaponType.WEAPON_SPIRIT_SWORD then
+            local aim = target.Position - mini.Position
+            mini:GetData().AscentionMiniIsaacAim = aim
+            local fired = native.TickProxy(proxy, aim.X, aim.Y, true)
+            if fired then
+                local data = mini:GetData()
+                data.AscentionMiniIsaacLastShotFrame = Game():GetFrameCount()
+                data.AscentionMiniIsaacLastShotVelocity = aim
+            end
+            return true
+        end
         local chargedTechnology = kind == WeaponType.WEAPON_LASER
             and mini.Player:HasCollectible(MONSTROS_LUNG)
             and mini.Player:HasCollectible(TECHNOLOGY)
@@ -660,10 +672,13 @@ function Router.Register(mod)
         proxy.Position = mini.Position
         proxy.Velocity = Vector.Zero
 
+        local weapon = proxy:GetWeapon()
+        if weapon and weapon:GetWeaponType() == WeaponType.WEAPON_SPIRIT_SWORD then
+            return
+        end
         local target = attackTargetFor(mini, proxy)
         local aim = target and (target.Position - mini.Position) or Vector.Zero
         mini:GetData().AscentionMiniIsaacAim = target and aim or nil
-        local weapon = proxy:GetWeapon()
         if weapon and weapon:GetWeaponType() == WeaponType.WEAPON_KNIFE then return end
         local fired, techXRelease, brimstoneReleasing =
             native.TickProxy(proxy, aim.X, aim.Y, target ~= nil)
@@ -727,11 +742,13 @@ function Router.Register(mod)
                 samples[kind] = count + 1
                 local state = native.Diagnostics(proxy)
                 Isaac.DebugString("[AscentionMiniIsaac] charge weapon=" .. tostring(kind)
-                    .. " current=" .. tostring(weapon:GetCharge())
+                    .. " current=" .. tostring(kind == WeaponType.WEAPON_SPIRIT_SWORD
+                        and state.spirit_sword_charge or weapon:GetCharge())
                     .. " max=" .. tostring(weapon:GetMaxCharge())
                     .. " delay=" .. tostring(weapon:GetFireDelay())
                     .. " fired=" .. tostring(weapon:GetNumFired())
                     .. " releases=" .. tostring(state.releases)
+                    .. " sword_attempts=" .. tostring(state.spirit_sword_attempts)
                     .. " projectiles=" .. tostring(state.projectiles)
                     .. " brimstones=" .. tostring(state.brimstones)
                     .. " tech_lasers=" .. tostring(state.tech_lasers)
@@ -748,12 +765,44 @@ function Router.Register(mod)
             mini:GetData().AscentionMiniIsaacLastShotFrame = Game():GetFrameCount()
             mini:GetData().AscentionMiniIsaacLastShotVelocity = aim
             local data = mini:GetData()
+            if weapon and weapon:GetWeaponType() == WeaponType.WEAPON_SPIRIT_SWORD then
+                local samples = data.AscentionMiniIsaacSpiritSwordReleases or 0
+                if samples < 8 then
+                    data.AscentionMiniIsaacSpiritSwordReleases = samples + 1
+                    local state = native.Diagnostics(proxy)
+                    Isaac.DebugString("[AscentionMiniIsaac] spirit_sword_release mini="
+                        .. tostring(mini.InitSeed)
+                        .. " charge=" .. tostring(weapon:GetCharge())
+                        .. " releases=" .. tostring(state.releases)
+                        .. " fired=" .. tostring(weapon:GetNumFired()))
+                end
+            end
             local count = data.AscentionMiniIsaacNativeDebugShots or 0
             if count < 3 then
                 data.AscentionMiniIsaacNativeDebugShots = count + 1
                 Isaac.DebugString("[AscentionMiniIsaac] native fired mini="
                     .. tostring(mini.InitSeed) .. " target="
                     .. tostring(target and target.InitSeed or "none"))
+            end
+        end
+        if weapon and weapon:GetWeaponType() == WeaponType.WEAPON_SPIRIT_SWORD then
+            local data = mini:GetData()
+            local state = native.Diagnostics(proxy)
+            local attempts = state.spirit_sword_attempts or 0
+            if attempts > (data.AscentionMiniIsaacLoggedSwordAttempts or 0)
+                and attempts <= 8 then
+                data.AscentionMiniIsaacLoggedSwordAttempts = attempts
+                local mainEntity = weapon:GetMainEntity()
+                local sword = mainEntity and mainEntity:ToKnife()
+                Isaac.DebugString("[AscentionMiniIsaac] spirit_sword_attempt mini="
+                    .. tostring(mini.InitSeed)
+                    .. " attempts=" .. tostring(attempts)
+                    .. " fired=" .. tostring(weapon:GetNumFired())
+                    .. " press_shots=" .. tostring(state.spirit_sword_press_shots)
+                    .. " release_shots=" .. tostring(state.spirit_sword_release_shots)
+                    .. " main_spin=" .. tostring(sword and sword:GetIsSpinAttack())
+                    .. " animation=" .. tostring(sword and sword:GetSprite():GetAnimation())
+                    .. " charge=" .. tostring(weapon:GetCharge()))
             end
         end
     end, FamiliarVariant.INCUBUS)

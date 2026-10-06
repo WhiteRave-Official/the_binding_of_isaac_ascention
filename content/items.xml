@@ -2,4 +2,5 @@
     <passive id="1" name="Golden Eye" description="Let it see for you" gfx="collectible_golden_eye.png" cache="familiars firedelay tearflag" quality="4" craftquality="4" tags="summonable offensive"/>
     <passive id="2" name="Arclight" description="Let there be light" gfx="collectibles_arclight.png" quality="4" craftquality="4" tags="offensive"/>
     <active id="3" name="Empress's Tiara" description="Call your guardians" gfx="collectibles_empress_tiara.png" quality="3" maxcharges="2" tags="summonable offensive"/>
+    <passive id="5" name="Flaming Rose" description="Every tear leaves a flame" gfx="collectibles_flaming_rose.png" quality="4" craftquality="4" tags="offensive"/>
 </items>

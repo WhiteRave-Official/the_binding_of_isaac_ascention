@@ -37,6 +37,10 @@ function SplitTears.Register(mod, splitLasers)
         local sourceDamage = source and source.CollisionDamage
         local sourceScaled = sourceData and sourceData.AscentionMiniIsaacNativeScaled
         local childScaled = data.AscentionMiniIsaacNativeScaled
+        local proxy = child.SpawnerEntity
+        data.AscentionMiniIsaacOwner = sourceData
+            and sourceData.AscentionMiniIsaacOwner
+            or (isProxy(proxy) and proxy:GetData().AscentionMiniIsaacProxyOwner)
 
         if source and source:ToTear() and source:Exists() then
             child.Position = source.Position
@@ -54,7 +58,6 @@ function SplitTears.Register(mod, splitLasers)
         data[SNAPSHOT_KEY] = nil
         if damageSamples < 20 then
             damageSamples = damageSamples + 1
-            local proxy = child.SpawnerEntity
             local player = isProxy(proxy) and proxy.Player
             data.AscentionMiniIsaacSplitDamageLog = true
             Isaac.DebugString("[AscentionMiniIsaac] split_damage stage=spawn frame="
@@ -69,7 +72,6 @@ function SplitTears.Register(mod, splitLasers)
                 .. " child_after=" .. tostring(child.CollisionDamage)
                 .. " child_after_scaled=" .. tostring(data.AscentionMiniIsaacNativeScaled))
         end
-        local proxy = child.SpawnerEntity
         if isProxy(proxy) then
             local proxyData = proxy:GetData()
             if proxyData.AscentionMiniIsaacTearSourceSeed == child.InitSeed then

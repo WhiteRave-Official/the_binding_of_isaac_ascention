@@ -44,6 +44,13 @@ local function firstScale(entity)
     return true
 end
 
+local function tagOwner(entity, proxy)
+    if proxy then
+        entity:GetData().AscentionMiniIsaacOwner =
+            proxy:GetData().AscentionMiniIsaacProxyOwner
+    end
+end
+
 function Adapter.Register(mod)
     local redirectedSamples = 0
     local chargedTearSamples = 0
@@ -95,6 +102,7 @@ function Adapter.Register(mod)
         -- SpawnerEntity. Aim and visual scale must be set before first render.
         local proxy = directProxy(tear.SpawnerEntity)
         if proxy then
+            tagOwner(tear, proxy)
             proxy:GetData().AscentionMiniIsaacSpectralTears =
                 tear:HasTearFlags(TearFlags.TEAR_SPECTRAL)
         end
@@ -137,6 +145,7 @@ function Adapter.Register(mod)
 
     mod:AddCallback(ModCallbacks.MC_POST_FAMILIAR_FIRE_PROJECTILE, function(_, tear)
         local proxy = proxyOf(tear.SpawnerEntity) or proxyOf(tear.Parent)
+        tagOwner(tear, proxy)
         if proxy and firstScale(tear) then
             local proxyData = proxy:GetData()
             local samples = proxyData.AscentionMiniIsaacTearSamples or 0
@@ -184,6 +193,7 @@ function Adapter.Register(mod)
         if proxy and firstScale(laser) then
             local beforeDamage = laser.CollisionDamage
             local data = laser:GetData()
+            tagOwner(laser, proxy)
             data.AscentionMiniIsaacLaserFactor = correction(proxy)
             data.AscentionMiniIsaacLaserChocolate = proxy.Player:HasCollectible(
                 CollectibleType.COLLECTIBLE_CHOCOLATE_MILK)
@@ -292,6 +302,7 @@ function Adapter.Register(mod)
 
     mod:AddCallback(ModCallbacks.MC_POST_FIRE_BOMB, function(_, bomb)
         local proxy = proxyOf(bomb.SpawnerEntity or bomb.Parent)
+        tagOwner(bomb, proxy)
         if proxy and firstScale(bomb) then
             bomb.ExplosionDamage = bomb.ExplosionDamage * correction(proxy)
             bomb.RadiusMultiplier = bomb.RadiusMultiplier * 0.6
@@ -301,6 +312,7 @@ function Adapter.Register(mod)
 
     mod:AddCallback(ModCallbacks.MC_POST_FIRE_KNIFE, function(_, knife)
         local proxy = proxyOf(knife.SpawnerEntity or knife.Parent)
+        tagOwner(knife, proxy)
         if proxy and firstScale(knife) then
             knife.CollisionDamage = knife.CollisionDamage * correction(proxy)
             knife.Scale = knife.Scale * 0.6

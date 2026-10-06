@@ -15,6 +15,10 @@ struct ProxyState {
     int releaseFrames = 0;
     float syntheticChocolateCharge = 0.0f;
     float syntheticChocolateMax = 0.0f;
+    float spiritSwordCharge = 0.0f;
+    unsigned int spiritSwordReleaseAttempts = 0;
+    unsigned int spiritSwordPressShots = 0;
+    unsigned int spiritSwordReleaseShots = 0;
     bool wasShooting = false;
     unsigned int inputReads = 0;
     unsigned int blockedFireCalls = 0;
@@ -153,6 +157,10 @@ int diagnostics(lua_State* state) {
     lua_pushinteger(state, proxy.manualChocolateShots); lua_setfield(state, -2, "chocolate_manual");
     lua_pushnumber(state, proxy.syntheticChocolateCharge); lua_setfield(state, -2, "chocolate_laser_charge");
     lua_pushnumber(state, proxy.syntheticChocolateMax); lua_setfield(state, -2, "chocolate_laser_max");
+    lua_pushnumber(state, proxy.spiritSwordCharge); lua_setfield(state, -2, "spirit_sword_charge");
+    lua_pushinteger(state, proxy.spiritSwordReleaseAttempts); lua_setfield(state, -2, "spirit_sword_attempts");
+    lua_pushinteger(state, proxy.spiritSwordPressShots); lua_setfield(state, -2, "spirit_sword_press_shots");
+    lua_pushinteger(state, proxy.spiritSwordReleaseShots); lua_setfield(state, -2, "spirit_sword_release_shots");
     lua_pushinteger(state, proxy.projectileCalls); lua_setfield(state, -2, "projectiles");
     lua_pushinteger(state, proxy.suppressedProjectiles); lua_setfield(state, -2, "suppressed_projectiles");
     lua_pushinteger(state, proxy.externalProjectileCalls); lua_setfield(state, -2, "external_projectiles");
@@ -214,11 +222,15 @@ int tickProxy(lua_State* state) {
     proxy.syntheticChocolateMax = syntheticChocolateLaser ? maxCharge : 0.0f;
     if (!syntheticChocolateLaser) proxy.syntheticChocolateCharge = 0.0f;
     const bool knifeWeapon = weapon->GetWeaponType() == WEAPON_KNIFE;
+    const bool spiritSwordWeapon = weapon->GetWeaponType() == WEAPON_SPIRIT_SWORD;
+    if (spiritSwordWeapon) proxy.suppressProjectile = true;
+    if (!spiritSwordWeapon) proxy.spiritSwordCharge = 0.0f;
     bool shooting = hasTarget;
     bool releaseCharge = false;
     if (!hasTarget) {
         proxy.releaseFrames = 0;
         proxy.syntheticChocolateCharge = 0.0f;
+        proxy.spiritSwordCharge = 0.0f;
         if (knifeWeapon) *weapon->GetCharge() = 0.0f;
     } else if (maxCharge > 0.0f) {
         if (syntheticChocolateLaser && proxy.releaseFrames == 0) {
@@ -228,12 +240,18 @@ int tickProxy(lua_State* state) {
         if (knifeWeapon && proxy.releaseFrames == 0) {
             *weapon->GetCharge() = std::min(maxCharge, *weapon->GetCharge() + 1.0f);
         }
+        if (spiritSwordWeapon) {
+            proxy.spiritSwordCharge = std::min(maxCharge, proxy.spiritSwordCharge + 1.0f);
+        }
         const float charge = syntheticChocolateLaser
-            ? proxy.syntheticChocolateCharge : *weapon->GetCharge();
+            ? proxy.syntheticChocolateCharge
+            : spiritSwordWeapon ? proxy.spiritSwordCharge : *weapon->GetCharge();
         if (proxy.releaseFrames == 0 && charge >= maxCharge) {
-            proxy.releaseFrames = weapon->GetWeaponType() == WEAPON_BRIMSTONE ? 25 : knifeWeapon ? 1 : 2;
+            proxy.releaseFrames = weapon->GetWeaponType() == WEAPON_BRIMSTONE
+                ? 25 : knifeWeapon ? 1 : 2;
             releaseCharge = true;
             if (syntheticChocolateLaser) proxy.syntheticChocolateCharge = 0.0f;
+            if (spiritSwordWeapon) proxy.spiritSwordCharge = 0.0f;
         }
         if (proxy.releaseFrames > 0) {
             --proxy.releaseFrames;
@@ -251,7 +269,25 @@ int tickProxy(lua_State* state) {
     inputShooting = shooting;
     inputTriggered = shooting && !proxy.wasShooting;
     firingProxy = true;
-    if (!knifeWeapon && !syntheticChocolateLaser) weapon->Fire(direction, shooting, false);
+    if (spiritSwordWeapon && releaseCharge) {
+        ++proxy.spiritSwordReleaseAttempts;
+        inputShooting = true;
+        inputTriggered = true;
+        weapon->Fire(direction, true, false);
+        proxy.spiritSwordPressShots += weapon->GetNumFired() - previousShots;
+        const int pressShots = weapon->GetNumFired();
+        // The press creates the sword and resets charge; restore the full
+        // charge before release so the native sword takes its spin branch.
+        *weapon->GetCharge() = std::max(maxCharge,
+            weapon->GetMaxFireDelay() * 4.0f) + 0.01f;
+        inputShooting = false;
+        inputTriggered = false;
+        weapon->Fire(direction, false, false);
+        proxy.spiritSwordReleaseShots += weapon->GetNumFired() - pressShots;
+        *weapon->GetCharge() = 0.0f;
+    } else if (!knifeWeapon && !spiritSwordWeapon && !syntheticChocolateLaser) {
+        weapon->Fire(direction, shooting, false);
+    }
     proxy.afterFireDirection = *weapon->GetDirection();
     if (releaseCharge) {
         ++proxy.releases;
@@ -268,6 +304,8 @@ int tickProxy(lua_State* state) {
         }
         if (knifeWeapon) {
             *weapon->GetCharge() = 0.0f;
+        } else if (spiritSwordWeapon) {
+            // The only Fire call for this sword was the full-charge release above.
         } else if (proxy.chocolateMode && weapon->GetNumFired() != previousShots) {
             // Chocolate Milk already released through Weapon::Fire; Shoot would add another tear.
             ++proxy.automaticChocolateShots;

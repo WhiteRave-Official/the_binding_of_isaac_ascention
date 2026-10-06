@@ -39,6 +39,8 @@ function SplitLasers.Register(mod)
         local beforeScale = laser:GetScale()
         local beforeMultiplier = laser:GetDamageMultiplier()
         laser:GetData()[SCALED_KEY] = true
+        laser:GetData().AscentionMiniIsaacOwner =
+            child:GetData().AscentionMiniIsaacOwner
         if laserDamage > 0 then
             laser:SetDamageMultiplier(beforeMultiplier * targetDamage / laserDamage)
         end
@@ -107,6 +109,8 @@ function SplitLasers.Register(mod)
         local beforeScale = laser:GetScale()
         local beforeMultiplier = laser:GetDamageMultiplier()
         local player = source.Parent and source.Parent:ToPlayer()
+        laser:GetData().AscentionMiniIsaacOwner =
+            source:GetData().AscentionMiniIsaacOwner
         local factor = TARGET_DAMAGE / (player
             and player:GetPlayerType() == PlayerType.PLAYER_LILITH
             and 1.0 or INCUBUS_DAMAGE)

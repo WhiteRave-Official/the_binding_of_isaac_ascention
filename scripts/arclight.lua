@@ -1,5 +1,6 @@
 local Arclight = {}
 local ProjectileSpawnContext = include("scripts.projectile_spawn_context")
+local MiniIsaacContext = include("scripts.minisaac.arclight_context")
 
 local BASE_CHANCE = 0.25
 local LUCK_CAP = 8.0
@@ -25,6 +26,7 @@ local SYNERGY_LASER_DAMAGE = 0.50
 local SOY_BRIMSTONE_LASER_DAMAGE = 0.20
 local SOY_BRIMSTONE_LASER_TICKS = 2
 local SPIN_PLAYBACK_SPEED = 0.8
+local MINI_ISAAC_SWORD_SCALE = 0.6
 local REAR_ARC_HALF_ANGLE = 65.0
 local REAR_ARC_MIN_RADIUS = 26.0
 local REAR_ARC_MAX_RADIUS = 40.0
@@ -213,6 +215,8 @@ end
 
 local function resolveProjectileContext(projectile)
     if not projectile then return nil, nil end
+    local miniProxy = MiniIsaacContext.ForProjectile(projectile)
+    if miniProxy then return miniProxy.Player, miniProxy end
     local parent = projectile.Parent
     local spawner = projectile.SpawnerEntity
 
@@ -266,7 +270,8 @@ local function isFetusSpawnedAttack(entity)
 end
 
 local function sourcePosition(source, player)
-    return source and source:Exists() and source.Position or player.Position
+    return MiniIsaacContext.Position(source)
+        or (source and source:Exists() and source.Position or player.Position)
 end
 
 local function formationAngle(index, count)
@@ -469,6 +474,12 @@ local function spawnSword(player, source, variant, direction, position, synergy,
         sourceColor = sourceColor or player.LaserColor,
     }
     configureBasicSynergies(data.Arclight, player)
+    if MiniIsaacContext.MiniForSource(source) then
+        data.Arclight.projectileScale = data.Arclight.projectileScale
+            * MINI_ISAAC_SWORD_SCALE
+        data.Arclight.hitRadius = data.Arclight.hitRadius
+            * MINI_ISAAC_SWORD_SCALE
+    end
     sprite.Scale = sprite.Scale * data.Arclight.projectileScale
     return effect
 end
@@ -732,6 +743,10 @@ local function updateSynergyOrb(effect)
 end
 
 local function sourceIsFiring(source, owner)
+    if MiniIsaacContext.MiniForSource(source) then
+        local aim = MiniIsaacContext.Aim(source)
+        return aim ~= nil and aim:LengthSquared() > 0.001
+    end
     local player = source and source:ToPlayer()
     local controller = player or owner
     return controller:GetFireDirection() ~= Direction.NO_DIRECTION
@@ -817,7 +832,7 @@ local function launchPair(player, source, variant, direction, synergy,
     if lastFrame and frame - lastFrame <= repeatWindow then return end
     sourceData.ArclightPairLaunchFrame = frame
 
-    local normalized = validDirection(direction, player)
+    local normalized = validDirection(MiniIsaacContext.Aim(source, direction), player)
     local perpendicular = Vector(-normalized.Y, normalized.X)
     local count = getChargedSwordCount(player, synergy, source)
     local swords = {}
@@ -883,7 +898,7 @@ local function spawnRolledSword(player, source, variant, direction, synergy,
     local count = hasMonstrosLung
         and rollMonstrosLungSwordCount(rng)
         or getRolledSwordCount(player, synergy, rng)
-    local normalized = validDirection(direction, player)
+    local normalized = validDirection(MiniIsaacContext.Aim(source, direction), player)
     local params = player:GetMultiShotParams(weaponTypeForSynergy(synergy))
     local spread = params:GetSpreadAngle(weaponTypeForSynergy(synergy))
     local center = sourcePosition(source, player)
@@ -1084,7 +1099,7 @@ local function spawnSpiritSwordNormal(player, source, variant, direction,
 
     local count = randomCount(rng, SPIRIT_SWORD_NORMAL_MIN,
         SPIRIT_SWORD_NORMAL_MAX)
-    local normalized = validDirection(direction, player)
+    local normalized = validDirection(MiniIsaacContext.Aim(source, direction), player)
     local center = sourcePosition(source, player)
     local payload = spiritSwordPayload(player)
 
@@ -1119,7 +1134,7 @@ local function spawnSpiritSwordSpin(player, source, variant, direction,
             SPIRIT_SWORD_SPIN_MAX)
     end
 
-    local normalized = validDirection(direction, player)
+    local normalized = validDirection(MiniIsaacContext.Aim(source, direction), player)
     local startAngle = rng:RandomFloat() * 360.0
     for index = 1, count do
         local swordDirection
@@ -1158,7 +1173,7 @@ local function updateSpiritSwordKnife(knife, variant)
     if not isSpiritSwordKnife(knife) then return end
 
     local fetusSource = findFetusTear(knife)
-    local player, source = resolveAttackContext(knife)
+    local player, source = resolveProjectileContext(knife)
     if fetusSource then source = fetusSource end
     if not player or not player:HasCollectible(Arclight.ItemId)
     or not player:HasCollectible(CollectibleType.COLLECTIBLE_SPIRIT_SWORD) then
@@ -1358,11 +1373,18 @@ local function updateControlledAim(effect, data, owner)
     if not data.aimControlled then return end
 
     local desired
-    local target = owner:GetMarkedTarget()
-    if target and target:Exists() then
-        desired = target.Position - effect.Position
+    local source = data.source and data.source.Ref
+    local mini = MiniIsaacContext.MiniForSource(source)
+    if mini then
+        local aim = MiniIsaacContext.Aim(source)
+        if aim then desired = mini.Position + aim - effect.Position end
     else
-        desired = owner:GetAimDirection()
+        local target = owner:GetMarkedTarget()
+        if target and target:Exists() then
+            desired = target.Position - effect.Position
+        else
+            desired = owner:GetAimDirection()
+        end
     end
     if not desired or desired:LengthSquared() <= 0.001 then return end
 
@@ -1599,7 +1621,8 @@ local function updateSword(effect)
     data.stateFrame = data.stateFrame + 1
 
     if data.state == "CHARGING" then
-        local aim = validDirection(owner:GetAimDirection(), owner)
+        local aim = validDirection(MiniIsaacContext.Aim(source,
+            owner:GetAimDirection()), owner)
         local target = formationPosition(source, owner, aim,
             data.formationIndex or 1, data.formationCount or 1)
         effect.Position = effect.Position + (target - effect.Position) * 0.35

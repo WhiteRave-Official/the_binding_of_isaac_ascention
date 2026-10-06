@@ -8,6 +8,10 @@ local SPLASH_ANIMATION = "gfx/projectiles/golden_tear_splash.anm2"
 local EYE_ANIMATION = "gfx/effects/effect_eye_of_sun.anm2"
 local MAX_STACKS = 4
 local BOUNCE_FRAMES = 8
+local MARK_DAMAGE_MULTIPLIER = 1.15
+local MARK_SLOW_MULTIPLIER = 0.85
+local MINI_HEAL_MULTIPLIER = 0.10
+local SLOW_COLOR = Color(1, 1, 1, 1, 0, 0, 0)
 local tearVisualSamples = 0
 local recentGoldenDeaths = {}
 local activeSplashes = {}
@@ -48,12 +52,35 @@ local function goldenSource(entity, depth)
         or goldenSource(entity.Parent, depth + 1)
 end
 
-local function familiarSource(entity, depth)
-    if not entity or depth > 4 then return false end
-    if entity:ToFamiliar() then return true end
-    if entity:ToPlayer() then return false end
-    return familiarSource(entity.SpawnerEntity, depth + 1)
-        or familiarSource(entity.Parent, depth + 1)
+local function miniIsaacOwner(entity, depth)
+    if not entity or depth > 4 then return nil end
+    local data = entity:GetData()
+    local owner = data.AscentionMiniIsaacOwner
+    local mini = owner and owner.Ref
+    if mini and mini:Exists() then return mini end
+
+    local familiar = entity:ToFamiliar()
+    if familiar then
+        if familiar.Variant == FamiliarVariant.MINISAAC then return familiar end
+        if data.AscentionMiniIsaacWeaponProxy then
+            owner = data.AscentionMiniIsaacProxyOwner
+            mini = owner and owner.Ref
+            if mini and mini:Exists() then return mini end
+        end
+    end
+    if entity:ToPlayer() then return nil end
+    return miniIsaacOwner(entity.SpawnerEntity, depth + 1)
+        or miniIsaacOwner(entity.Parent, depth + 1)
+end
+
+local function geburahMiniSource(source, extraSource)
+    local mini = miniIsaacOwner(extraSource and extraSource.Entity, 0)
+        or miniIsaacOwner(source and source.Entity, 0)
+    local player = mini and mini.Player
+    if mini and mini.Variant == FamiliarVariant.MINISAAC
+        and player and player:GetPlayerType() == GEBURAH then
+        return mini
+    end
 end
 
 local function markTear(tear)
@@ -69,6 +96,7 @@ local function isGeburahTear(tear)
 end
 
 local function updateTearVisual(tear)
+    if tear:GetData().AscentionFlamingRoseTear then return end
     local sprite = tear:GetSprite()
     local filename = sprite:GetFilename() or ""
     if filename:lower():match("golden_tear_projectile%.anm2$") then return end
@@ -192,20 +220,33 @@ function EyeOfSun.Register(mod)
     mod:AddCallback(ModCallbacks.MC_ENTITY_TAKE_DMG,
         function(_, entity, damage, _, source, _, extraSource)
             if not EyeOfSun.IsMarked(entity) then return end
-            if familiarSource(extraSource and extraSource.Entity, 0)
-                or familiarSource(source and source.Entity, 0) then
-                return { Damage = damage * 1.5 }
-            end
+            local state = entity:GetData()[STATE_KEY]
+            local mini = geburahMiniSource(source, extraSource)
+            state.pendingHeal = mini and {
+                mini = EntityPtr(mini), beforeHp = entity.HitPoints,
+            } or nil
+            return { Damage = damage * MARK_DAMAGE_MULTIPLIER }
         end, EntityType.ENTITY_NPC)
 
     mod:AddCallback(ModCallbacks.MC_POST_ENTITY_TAKE_DMG,
         function(_, entity, _, _, source, _, extraSource)
+            local state = entity:GetData()[STATE_KEY]
+            local pending = state and state.pendingHeal
+            if pending then
+                state.pendingHeal = nil
+                local mini = pending.mini.Ref
+                if mini and mini:Exists() and not mini:IsDead() then
+                    local dealt = math.max(0, pending.beforeHp - entity.HitPoints)
+                    mini.HitPoints = math.min(mini.MaxHitPoints,
+                        mini.HitPoints + dealt * MINI_HEAL_MULTIPLIER)
+                end
+            end
             if not validEnemy(entity) then return end
             if not goldenSource(extraSource and extraSource.Entity, 0)
                 and not goldenSource(source and source.Entity, 0) then return end
 
             local data = entity:GetData()
-            local state = data[STATE_KEY]
+            state = data[STATE_KEY]
             if not state then
                 state = { stacks = 0, eye = newSprite(), fire = newSprite() }
                 data[STATE_KEY] = state
@@ -226,6 +267,10 @@ function EyeOfSun.Register(mod)
 
     mod:AddCallback(ModCallbacks.MC_NPC_UPDATE, function(_, npc)
         local state = npc:GetData()[STATE_KEY]
+        if state and state.stacks >= MAX_STACKS then
+            npc:AddSlowing(EntityRef(npc), 2, MARK_SLOW_MULTIPLIER,
+                SLOW_COLOR, true)
+        end
         if state and state.bounce and state.bounce > 0 then
             state.bounce = state.bounce - 1
         end
