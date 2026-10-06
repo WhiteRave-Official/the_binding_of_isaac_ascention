@@ -2,6 +2,8 @@ local SplitTears = {}
 
 local SNAPSHOT_KEY = "AscentionMiniIsaacPreAim"
 local CHILD_KEY = "AscentionMiniIsaacSplitChild"
+local SWORD_FACTOR_KEY = "AscentionMiniIsaacSpiritSwordFactor"
+local SWORD_DAMAGE_CAP_KEY = "AscentionMiniIsaacSpiritSwordDamageCap"
 
 local function isProxy(entity)
     local familiar = entity and entity:ToFamiliar()
@@ -29,7 +31,8 @@ function SplitTears.Register(mod, splitLasers)
         local snapshot = data[SNAPSHOT_KEY]
         local sourceData = source and source:GetData()
         if not snapshot and not (sourceData and
-                (sourceData.AscentionMiniIsaacNativeAimed or sourceData[CHILD_KEY])) then
+                (sourceData.AscentionMiniIsaacNativeAimed or sourceData[CHILD_KEY]
+                    or sourceData[SWORD_FACTOR_KEY])) then
             return
         end
 
@@ -52,6 +55,12 @@ function SplitTears.Register(mod, splitLasers)
             child.Scale = snapshot.scale
         end
         if splitLasers then splitLasers.CorrectSplit(child, source) end
+        -- Sword-generated split tears bypass the normal Incubus tear damage path.
+        local swordFactor = sourceData and sourceData[SWORD_FACTOR_KEY]
+        if swordFactor then
+            child.CollisionDamage = math.min(child.CollisionDamage * swordFactor,
+                sourceData[SWORD_DAMAGE_CAP_KEY])
+        end
         data.AscentionMiniIsaacNativeAimed = nil
         data.AscentionMiniIsaacNativeScaled = true
         data[CHILD_KEY] = true

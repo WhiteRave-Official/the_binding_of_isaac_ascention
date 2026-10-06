@@ -2,6 +2,8 @@
     <Pool Name="treasure">
         <Item Name="Golden Eye" Weight="1" DecreaseBy="1" RemoveOn="0.1"/>
         <Item Name="Arclight" Weight="1" DecreaseBy="1" RemoveOn="0.1"/>
+        <Item Name="Eye of the Old God" Weight="1" DecreaseBy="1" RemoveOn="0.1"/>
+        <Item Name="Golden Bracelet" Weight="1" DecreaseBy="1" RemoveOn="0.1"/>
     </Pool>
     <Pool Name="angel">
         <Item Name="Arclight" Weight="1" DecreaseBy="1" RemoveOn="0.1"/>

@@ -24,7 +24,9 @@ The earlier `Familiar::Shoot()` attempt did not create swords; a separate
 `Weapon::FireSword` hook caused a native crash and was removed. The old
 managed manual sword attack was removed because it bypassed native synergies. The
 `MC_POST_FIRE_SWORD` adapter tags native swords and scales final hit damage to
-15% of player damage after the game's sword multipliers. Diagnostics expose
+15% of native charged sword damage after Incubus correction. Sword-generated
+split tears are capped at 15% of the player's current damage; their native damage otherwise bypasses the Incubus
+tear correction. Diagnostics expose
 `spirit_sword_charge`, `spirit_sword_attempts`, and shots on each edge; verify these alongside
 `spirit_sword_native` in the next in-game log before treating this route as confirmed.
 

@@ -2,6 +2,7 @@ local MiniIsaacContext = include("scripts.minisaac.arclight_context")
 local Adapter = {}
 
 local SWORD_FACTOR_KEY = "AscentionMiniIsaacSpiritSwordFactor"
+local SWORD_DAMAGE_CAP_KEY = "AscentionMiniIsaacSpiritSwordDamageCap"
 local SWORD_HIT_UNTIL_KEY = "AscentionMiniIsaacSpiritSwordHitUntil"
 local TARGET_DAMAGE = 0.15
 local INCUBUS_DAMAGE = 0.75
@@ -18,8 +19,8 @@ local function factorOf(entity)
     if not entity then return nil end
     local knife = entity:ToKnife()
     if knife then
-        local factor = knife:GetData()[SWORD_FACTOR_KEY]
-        if factor then return factor end
+        local data = knife:GetData()
+        if data[SWORD_FACTOR_KEY] then return data[SWORD_FACTOR_KEY] end
         local parent = knife:GetHitboxParentKnife()
         if parent and parent:Exists() then
             return parent:GetData()[SWORD_FACTOR_KEY]
@@ -47,8 +48,10 @@ function Adapter.Register(mod)
         local mini = MiniIsaacContext.MiniForSource(proxy)
         if not mini then return end
         local factor = damageFactor(proxy)
+        local damageCap = proxy.Player.Damage * TARGET_DAMAGE
         local untilFrame = Game():GetFrameCount() + HIT_WINDOW
         sword:GetData()[SWORD_FACTOR_KEY] = factor
+        sword:GetData()[SWORD_DAMAGE_CAP_KEY] = damageCap
         proxy:GetData()[SWORD_FACTOR_KEY] = factor
         proxy:GetData()[SWORD_HIT_UNTIL_KEY] = untilFrame
         mini:GetData()[SWORD_FACTOR_KEY] = factor

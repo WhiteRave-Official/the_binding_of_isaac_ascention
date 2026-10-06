@@ -3,10 +3,12 @@ local EyeOfSun = {}
 local GEBURAH = Isaac.GetPlayerTypeByName("Geburah")
 local STATE_KEY = "AscentionEyeOfSun"
 local GOLDEN_TEAR_KEY = "AscentionGeburahGoldenTear"
+local OLD_GOD_TEAR_KEY = "AscentionOldGodEyeTear"
 local TEAR_ANIMATION = "gfx/projectiles/golden_tear_projectile.anm2"
 local SPLASH_ANIMATION = "gfx/projectiles/golden_tear_splash.anm2"
 local EYE_ANIMATION = "gfx/effects/effect_eye_of_sun.anm2"
 local MAX_STACKS = 4
+local OLD_GOD_DURATION = 150
 local BOUNCE_FRAMES = 8
 local MARK_DAMAGE_MULTIPLIER = 1.15
 local MARK_SLOW_MULTIPLIER = 0.85
@@ -50,6 +52,15 @@ local function goldenSource(entity, depth)
     if entity:ToPlayer() then return false end
     return goldenSource(entity.SpawnerEntity, depth + 1)
         or goldenSource(entity.Parent, depth + 1)
+end
+
+local function oldGodSource(entity, depth)
+    if not entity or depth > 4 then return false end
+    local tear = entity:ToTear()
+    if tear and tear:GetData()[OLD_GOD_TEAR_KEY] then return true end
+    if entity:ToPlayer() then return false end
+    return oldGodSource(entity.SpawnerEntity, depth + 1)
+        or oldGodSource(entity.Parent, depth + 1)
 end
 
 local function miniIsaacOwner(entity, depth)
@@ -96,7 +107,8 @@ local function isGeburahTear(tear)
 end
 
 local function updateTearVisual(tear)
-    if tear:GetData().AscentionFlamingRoseTear then return end
+    if tear:GetData().AscentionFlamingRoseTear
+        and not tear:GetData()[OLD_GOD_TEAR_KEY] then return end
     local sprite = tear:GetSprite()
     local filename = sprite:GetFilename() or ""
     if filename:lower():match("golden_tear_projectile%.anm2$") then return end
@@ -125,7 +137,26 @@ end
 
 function EyeOfSun.IsMarked(entity)
     local state = entity and entity:GetData()[STATE_KEY]
-    return state and state.stacks >= MAX_STACKS or false
+    return state and state.stacks >= MAX_STACKS
+        and (not state.expiresAt or Game():GetFrameCount() < state.expiresAt)
+        or false
+end
+
+function EyeOfSun.MarkOldGodTear(tear)
+    markTear(tear)
+    tear:GetData()[OLD_GOD_TEAR_KEY] = true
+end
+
+local function fullMark(entity, state, expiresAt)
+    local previous = markedTarget and markedTarget.Ref
+    if previous and previous:Exists()
+        and GetPtrHash(previous) ~= GetPtrHash(entity) then
+        previous:GetData()[STATE_KEY] = nil
+    end
+    state.stacks = MAX_STACKS
+    state.bounce = BOUNCE_FRAMES
+    state.expiresAt = expiresAt
+    markedTarget = EntityPtr(entity)
 end
 
 function EyeOfSun.Register(mod)
@@ -156,6 +187,9 @@ function EyeOfSun.Register(mod)
         if child and source and not miniIsaacTear(child)
             and not miniIsaacTear(source) and goldenSource(source, 0) then
             markTear(child)
+            if oldGodSource(source, 0) then
+                child:GetData()[OLD_GOD_TEAR_KEY] = true
+            end
         end
     end)
 
@@ -245,28 +279,33 @@ function EyeOfSun.Register(mod)
             if not goldenSource(extraSource and extraSource.Entity, 0)
                 and not goldenSource(source and source.Entity, 0) then return end
 
+            local oldGodHit = oldGodSource(extraSource and extraSource.Entity, 0)
+                or oldGodSource(source and source.Entity, 0)
+
             local data = entity:GetData()
             state = data[STATE_KEY]
             if not state then
                 state = { stacks = 0, eye = newSprite(), fire = newSprite() }
                 data[STATE_KEY] = state
             end
-            if state.stacks < MAX_STACKS then
+            if oldGodHit then
+                fullMark(entity, state, Game():GetFrameCount() + OLD_GOD_DURATION)
+            elseif state.stacks < MAX_STACKS then
                 state.stacks = state.stacks + 1
                 state.bounce = BOUNCE_FRAMES
                 if state.stacks == MAX_STACKS then
-                    local previous = markedTarget and markedTarget.Ref
-                    if previous and previous:Exists()
-                        and GetPtrHash(previous) ~= GetPtrHash(entity) then
-                        previous:GetData()[STATE_KEY] = nil
-                    end
-                    markedTarget = EntityPtr(entity)
+                    fullMark(entity, state)
                 end
             end
         end, EntityType.ENTITY_NPC)
 
     mod:AddCallback(ModCallbacks.MC_NPC_UPDATE, function(_, npc)
         local state = npc:GetData()[STATE_KEY]
+        if state and state.expiresAt
+            and Game():GetFrameCount() >= state.expiresAt then
+            npc:GetData()[STATE_KEY] = nil
+            return
+        end
         if state and state.stacks >= MAX_STACKS then
             npc:AddSlowing(EntityRef(npc), 2, MARK_SLOW_MULTIPLIER,
                 SLOW_COLOR, true)

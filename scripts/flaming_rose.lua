@@ -90,6 +90,7 @@ function FlamingRose.Register(mod, itemId)
 
     mod:AddCallback(ModCallbacks.MC_POST_TEAR_UPDATE, function(_, tear)
         if not tear:GetData()[TEAR_KEY] then return end
+        if tear:GetData().AscentionOldGodEyeTear then return end
         updateTearVisual(tear)
     end)
 

@@ -25,6 +25,7 @@ local function entity(seed)
     return value
 end
 local player = entity(1)
+player.Damage = 3.8
 function player:GetPlayerType() return 0 end
 mini = entity(2)
 function mini:ToFamiliar() return self end
@@ -56,6 +57,7 @@ assert(externalSword.data.AscentionMiniIsaacSpiritSwordFactor == nil)
 AscentionNative.FiringProxySeed = function() return proxy.InitSeed end
 local factor = 0.15 / 0.75
 assert(sword.data.AscentionMiniIsaacSpiritSwordFactor == factor)
+assert(sword.data.AscentionMiniIsaacSpiritSwordDamageCap == player.Damage * 0.15)
 assert(callbacks[ModCallbacks.MC_ENTITY_TAKE_DMG](nil, npc, 20, 0,
     { Entity = sword }, 0).Damage == 20 * factor)
 
@@ -66,6 +68,8 @@ assert(callbacks[ModCallbacks.MC_ENTITY_TAKE_DMG](nil, npc, 20, 0,
     { Entity = hitbox }, 0).Damage == 20 * factor)
 assert(callbacks[ModCallbacks.MC_ENTITY_TAKE_DMG](nil, npc, 20, 0,
     { Entity = mini }, 0).Damage == 20 * factor)
+assert(callbacks[ModCallbacks.MC_ENTITY_TAKE_DMG](nil, npc, 2, 0,
+    { Entity = sword }, 0).Damage == 2 * factor)
 frame = 131
 assert(callbacks[ModCallbacks.MC_ENTITY_TAKE_DMG](nil, npc, 20, 0,
     { Entity = mini }, 0) == nil)

@@ -1,8 +1,10 @@
 ModCallbacks = {
     MC_POST_TEAR_INIT = 1,
     MC_POST_FIRE_SPLIT_TEAR = 2,
+    MC_POST_TEAR_UPDATE = 3,
 }
 Isaac = { DebugString = function() end }
+Game = function() return { GetFrameCount = function() return 42 end } end
 Vector = function(x, y) return { X = x, Y = y } end
 
 local callbacks = {}
@@ -62,3 +64,12 @@ local unrelated = entity(5, 10, 10, false, true)
 callbacks[ModCallbacks.MC_POST_FIRE_SPLIT_TEAR](nil, unrelated, nil)
 assert(unrelated.Position.X == 10 and unrelated.Position.Y == 10)
 assert(not unrelated.data.AscentionMiniIsaacSplitChild)
+
+local sword = entity(6, 20, 20, false, false)
+sword.data.AscentionMiniIsaacSpiritSwordFactor = 0.2
+sword.data.AscentionMiniIsaacSpiritSwordDamageCap = 0.57
+local swordChild = entity(7, 20, 20, false, true)
+swordChild.CollisionDamage = 15.4
+callbacks[ModCallbacks.MC_POST_FIRE_SPLIT_TEAR](nil, swordChild, sword)
+assert(swordChild.CollisionDamage == 0.57)
+assert(swordChild.data.AscentionMiniIsaacNativeScaled)
