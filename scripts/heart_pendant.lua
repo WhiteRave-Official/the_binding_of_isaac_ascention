@@ -1,8 +1,8 @@
-local GoldenBracelet = {}
+local HeartPendant = {}
 
-local HEALTH_COUNT_KEY = "AscentionGoldenBraceletHealthCount"
-local HEALTH_BASE_KEY = "AscentionGoldenBraceletBaseHealth"
-local COOLDOWN_KEY = "AscentionGoldenBraceletCooldown"
+local HEALTH_COUNT_KEY = "AscentionHeartPendantHealthCount"
+local HEALTH_BASE_KEY = "AscentionHeartPendantBaseHealth"
+local COOLDOWN_KEY = "AscentionHeartPendantCooldown"
 
 local function ownerOf(entity, depth)
     if not entity or depth > 5 then return nil end
@@ -54,14 +54,23 @@ local function fasterCooldown(familiar, count)
         state = { previous = 0, base = 0, fraction = 0 }
         data[COOLDOWN_KEY] = state
     end
-    local current = familiar.FireCooldown
+    local weapon = familiar.GetWeapon and familiar:GetWeapon()
+    local usesWeapon = weapon ~= nil
+    if state.usesWeapon ~= usesWeapon then
+        state.previous = 0
+        state.base = 0
+        state.fraction = 0
+        state.usesWeapon = usesWeapon
+    end
+    local current = usesWeapon and weapon:GetFireDelay() or familiar.FireCooldown
     if not current or current <= 0 or count <= 0 then
         state.previous = current or 0
         state.fraction = 0
         return
     end
     if current > state.previous then
-        state.base = current
+        state.base = usesWeapon
+            and math.max(current, weapon:GetMaxFireDelay()) or current
         state.fraction = 0
     end
     local base = state.base > 0 and state.base or current
@@ -70,12 +79,18 @@ local function fasterCooldown(familiar, count)
     local extra = math.floor(state.fraction)
     state.fraction = state.fraction - extra
     if extra > 0 then
-        familiar.FireCooldown = math.max(0, current - extra)
+        local shortened = math.max(0, current - extra)
+        if usesWeapon then
+            weapon:SetFireDelay(shortened)
+        else
+            familiar.FireCooldown = shortened
+        end
     end
-    state.previous = familiar.FireCooldown
+    state.previous = usesWeapon and weapon:GetFireDelay()
+        or familiar.FireCooldown
 end
 
-function GoldenBracelet.Register(mod, itemId)
+function HeartPendant.Register(mod, itemId)
     mod:AddCallback(ModCallbacks.MC_FAMILIAR_UPDATE, function(_, familiar)
         local owner = familiar.Player
         if not owner then return end
@@ -110,4 +125,4 @@ function GoldenBracelet.Register(mod, itemId)
         end, EntityType.ENTITY_NPC)
 end
 
-return GoldenBracelet
+return HeartPendant

@@ -4,5 +4,7 @@
     <active id="3" name="Empress's Tiara" description="Call your guardians" gfx="collectibles_empress_tiara.png" quality="3" maxcharges="2" tags="summonable offensive"/>
     <passive id="5" name="Flaming Rose" description="Every tear leaves a flame" gfx="collectibles_flaming_rose.png" quality="4" craftquality="4" tags="offensive"/>
     <passive id="6" name="Eye of the Old God" description="The sun remembers" gfx="collectibles_eye_of_old_god.png" quality="3" craftquality="3" tags="offensive"/>
-    <passive id="7" name="Golden Bracelet" description="Strength for your allies" gfx="collectibles_golden_bracelet.png" quality="3" craftquality="3" tags="offensive summonable"/>
+    <passive id="7" name="Heart Pendant" description="Strength for your allies" gfx="collectibles_heart_pendant.png" quality="3" craftquality="3" tags="offensive summonable"/>
+    <passive id="9" name="Holy Chalice" description="Make a wish" gfx="collectibles_holy_chalice.png" cache="firedelay shotspeed" quality="3" craftquality="3" tags="offensive"/>
+    <trinket id="8" name="Broken Pendant" description="Softens item stat penalties" gfx="trinket_broken_amulet.png"/>
 </items>

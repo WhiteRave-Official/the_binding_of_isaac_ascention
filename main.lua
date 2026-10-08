@@ -4,12 +4,16 @@ local Geburah = include("scripts.characters.geburah")
 local StartingPocketActives = include("scripts.characters.starting_pocket_actives")
 local EyeOfSun = include("scripts.characters.eye_of_sun")
 local EyeOfOldGod = include("scripts.eye_of_old_god")
-local GoldenBracelet = include("scripts.golden_bracelet")
+local HeartPendant = include("scripts.heart_pendant")
+local BrokenPendant = include("scripts.broken_pendant")
+local Eid = include("scripts.compat.eid")
 local EmpressTiara = include("scripts.empress_tiara")
 local GoldenEyeWeaponAdapter = include("scripts.golden_eye_weapon_adapter")
+local GoldenEyeTargeting = include("scripts.golden_eye_targeting")
 local GoldenEye = include("scripts.golden_eye")
 local Arclight = include("scripts.arclight")
 local FlamingRose = include("scripts.flaming_rose")
+local HolyChalice = include("scripts.holy_chalice")
 local MiniIsaacChargeVisuals = include("scripts.minisaac.charge_visuals")
 local MiniIsaacCombat = include("scripts.minisaac.combat")
 local MiniIsaacRouter = include("scripts.minisaac.incubus_router")
@@ -28,17 +32,20 @@ local ARCLIGHT = Isaac.GetItemIdByName("Arclight")
 local ARCLIGHT_SWORD = Isaac.GetEntityVariantByName("Arclight Sword")
 local EMPRESS_TIARA = Isaac.GetItemIdByName("Empress's Tiara")
 local FLAMING_ROSE = Isaac.GetItemIdByName("Flaming Rose")
+local HOLY_CHALICE = Isaac.GetItemIdByName("Holy Chalice")
 local EYE_OF_OLD_GOD = Isaac.GetItemIdByName("Eye of the Old God")
-local GOLDEN_BRACELET = Isaac.GetItemIdByName("Golden Bracelet")
+local HEART_PENDANT = Isaac.GetItemIdByName("Heart Pendant")
+local BROKEN_PENDANT = Isaac.GetTrinketIdByName("Broken Pendant")
 
 Geburah.Register(mod, EMPRESS_TIARA)
 StartingPocketActives.Register(mod)
 EmpressTiara.Register(mod, EMPRESS_TIARA)
-GoldenEye.Register(mod, GOLDEN_EYE, GOLDEN_EYE_FAMILIAR, GoldenEyeWeaponAdapter)
+GoldenEye.Register(mod, GOLDEN_EYE, GOLDEN_EYE_FAMILIAR, GoldenEyeWeaponAdapter, GoldenEyeTargeting)
 Arclight.Register(mod, ARCLIGHT, ARCLIGHT_SWORD)
 FlamingRose.Register(mod, FLAMING_ROSE)
+HolyChalice.Register(mod, HOLY_CHALICE)
 EyeOfOldGod.Register(mod, EYE_OF_OLD_GOD, EyeOfSun)
-GoldenBracelet.Register(mod, GOLDEN_BRACELET)
+HeartPendant.Register(mod, HEART_PENDANT)
 MiniIsaacChargeVisuals.Register(mod)
 MiniIsaacCombat.Register(mod)
 MiniIsaacRouter.Register(mod)
@@ -51,3 +58,15 @@ MiniIsaacSpiritSwordAdapter.Register(mod)
 MiniIsaacSplitLasers.Register(mod)
 EyeOfSun.Register(mod)
 RevelationRework.Register(mod)
+BrokenPendant.Register(mod, BROKEN_PENDANT)
+Eid.Register(mod, {
+    goldenEye = GOLDEN_EYE,
+    arclight = ARCLIGHT,
+    tiara = EMPRESS_TIARA,
+    flamingRose = FLAMING_ROSE,
+    holyChalice = HOLY_CHALICE,
+    eyeOfOldGod = EYE_OF_OLD_GOD,
+    heartPendant = HEART_PENDANT,
+    revelation = CollectibleType.COLLECTIBLE_REVELATION,
+    brokenPendant = BROKEN_PENDANT,
+})

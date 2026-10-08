@@ -1,6 +1,7 @@
 local Geburah = {}
 
 local PLAYER_TYPE = Isaac.GetPlayerTypeByName("Geburah")
+local PLAYER_SPRITE = "gfx/characters/player_geburah.anm2"
 local HAIR_COSTUME = Isaac.GetCostumeIdByPath("gfx/characters/geburah_hair.anm2")
 local MONSTROS_LUNG_HAIR_COSTUME = Isaac.GetCostumeIdByPath("gfx/characters/geburah_hair_monstros_lung.anm2")
 local TAIL_COSTUME = Isaac.GetCostumeIdByPath("gfx/characters/geburah_tail.anm2")
@@ -8,6 +9,7 @@ local MONSTROS_LUNG = CollectibleType.COLLECTIBLE_MONSTROS_LUNG
 local JUPITER = CollectibleType.COLLECTIBLE_JUPITER
 local HAIR_STATE_KEY = "AscentionGeburahMonstrosLungHair"
 local TAIL_STATE_KEY = "AscentionGeburahTail"
+local PLAYER_SPRITE_KEY = "AscentionGeburahPlayerSprite"
 
 local function isGeburah(player)
     return PLAYER_TYPE >= 0 and player:GetPlayerType() == PLAYER_TYPE
@@ -25,10 +27,20 @@ local function addHairCostume(player, costumeId)
     end
 end
 
+local function loadPlayerSprite(player)
+    local data = player:GetData()
+    if data[PLAYER_SPRITE_KEY] then return end
+    local sprite = player:GetSprite()
+    sprite:Load(PLAYER_SPRITE, true)
+    sprite:Play(sprite:GetDefaultAnimationName(), true)
+    data[PLAYER_SPRITE_KEY] = true
+end
+
 local function updateHairCostume(_, player)
     local data = player:GetData()
 
     if not isGeburah(player) then
+        data[PLAYER_SPRITE_KEY] = nil
         if data[HAIR_STATE_KEY] ~= nil then
             removeHairCostume(player, HAIR_COSTUME)
             removeHairCostume(player, MONSTROS_LUNG_HAIR_COSTUME)
@@ -40,6 +52,8 @@ local function updateHairCostume(_, player)
         data[TAIL_STATE_KEY] = nil
         return
     end
+
+    loadPlayerSprite(player)
 
     local useTailCostume = not player:HasCollectible(JUPITER)
     if data[TAIL_STATE_KEY] ~= useTailCostume then
@@ -101,6 +115,7 @@ function Geburah.Register(mod, tiaraId)
     end)
 
     mod:AddCallback(ModCallbacks.MC_POST_PLAYER_INIT, function(_, player)
+        if isGeburah(player) then loadPlayerSprite(player) end
         if runStarted then giveStartingTiara(player) end
     end)
 

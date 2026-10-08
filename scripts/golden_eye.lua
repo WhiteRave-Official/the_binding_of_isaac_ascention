@@ -3,7 +3,7 @@ local GoldenEye = {}
 local json = require "json"
 
 local TARGET_REFRESH_INTERVAL = 6
-local MAX_TARGET_DISTANCE = 1000.0
+
 local FORMATION_RADIUS = 60.0
 local FORMATION_ARC_DEGREES = 100.0
 local EYE_SCALE = 0.8
@@ -16,7 +16,7 @@ local ROOM_ENTRY_DELAY_SPREAD = 10
 local SHOT_INTERVAL_MIN = 2
 local SHOT_INTERVAL_MAX = 5
 local PROXY_VARIANT = FamiliarVariant.INCUBUS
-local KILL_THRESHOLDS = { 100, 200, 300 }
+local KILL_THRESHOLDS = { 50, 100, 200 }
 local SAVE_KEY = "goldenEyeKills"
 
 local DIRECTION_DATA = {
@@ -79,34 +79,12 @@ local function getDirectionName(vector)
     return vector.Y < 0 and "Up" or "Down"
 end
 
-local function isValidTarget(entity)
-    local npc = entity and entity:ToNPC()
-    return npc ~= nil
-        and npc:Exists()
-        and not npc:IsDead()
-        and npc:IsActiveEnemy(false)
-        and npc:IsVulnerableEnemy()
-        and not npc:HasEntityFlags(EntityFlag.FLAG_FRIENDLY)
+local function isValidTarget(target)
+    return GoldenEye.Targeting.IsValid(target)
 end
 
 local function findTargetFrom(position)
-    local bestTarget = nil
-    local bestDistance = MAX_TARGET_DISTANCE * MAX_TARGET_DISTANCE
-    local bestSeed = math.huge
-
-    for _, entity in ipairs(Isaac.GetRoomEntities()) do
-        if isValidTarget(entity) then
-            local distance = position:DistanceSquared(entity.Position)
-            if distance < bestDistance
-                or (distance == bestDistance and entity.InitSeed < bestSeed)
-            then
-                bestTarget = entity
-                bestDistance = distance
-                bestSeed = entity.InitSeed
-            end
-        end
-    end
-    return bestTarget
+    return GoldenEye.Targeting.FindTarget(position)
 end
 
 local function findTarget(familiar)
@@ -378,14 +356,37 @@ local function updateAutoFire(player)
     playerData.GoldenEyeBlockedShooting = true
     player:SetCanShoot(false)
 
-    local target = findTargetFrom(player.Position)
+    local target = GoldenEye.Targeting.FindEnemy(player.Position)
+    if target then
+        playerData.GoldenEyePropTarget = nil
+        playerData.GoldenEyePropSearchDelay = 0
+    else
+        target = playerData.GoldenEyePropTarget
+        if not GoldenEye.Targeting.IsProp(target) then
+            target = nil
+            local delay = playerData.GoldenEyePropSearchDelay or 0
+            if delay <= 0 then
+                target = GoldenEye.Targeting.FindProp(player.Position)
+                playerData.GoldenEyePropTarget = target
+                playerData.GoldenEyePropSearchDelay = TARGET_REFRESH_INTERVAL
+            else
+                playerData.GoldenEyePropSearchDelay = delay - 1
+            end
+        end
+    end
     if not target then
         playerData.GoldenEyeAim = nil
         playerData.GoldenEyeFireInput = false
         return
     end
 
-    playerData.GoldenEyeAim = target.Position - player.Position
+    local targetPosition = GoldenEye.Targeting.GetPosition(target)
+    if not targetPosition then
+        playerData.GoldenEyeAim = nil
+        playerData.GoldenEyeFireInput = false
+        return
+    end
+    playerData.GoldenEyeAim = targetPosition - player.Position
     local proxy = findPlayerProxy(player)
     local weapon = proxy and proxy:GetWeapon()
     local maxCharge = weapon and weapon:GetMaxCharge() or 0
@@ -401,9 +402,10 @@ local function updateAutoFire(player)
     end
 end
 
-function GoldenEye.Register(mod, itemId, familiarVariant, weaponAdapter)
+function GoldenEye.Register(mod, itemId, familiarVariant, weaponAdapter, targeting)
     GoldenEye.ItemId = itemId
     GoldenEye.FamiliarVariant = familiarVariant
+    GoldenEye.Targeting = targeting
 
     mod:AddCallback(ModCallbacks.MC_POST_GAME_STARTED, function(_, continued)
         load(mod, continued)
@@ -432,7 +434,7 @@ function GoldenEye.Register(mod, itemId, familiarVariant, weaponAdapter)
         elseif cacheFlag == CacheFlag.CACHE_TEARFLAG
             and player:HasCollectible(itemId)
         then
-            player.TearFlags = player.TearFlags | TearFlags.TEAR_HOMING
+            player.TearFlags = player.TearFlags | TearFlags.TEAR_HOMING | TearFlags.TEAR_SPECTRAL
         end
     end)
 
@@ -463,6 +465,11 @@ function GoldenEye.Register(mod, itemId, familiarVariant, weaponAdapter)
     end)
 
     mod:AddCallback(ModCallbacks.MC_POST_NEW_ROOM, function()
+        for index = 0, Game():GetNumPlayers() - 1 do
+            local playerData = Isaac.GetPlayer(index):GetData()
+            playerData.GoldenEyePropTarget = nil
+            playerData.GoldenEyePropSearchDelay = 0
+        end
         for _, entity in ipairs(Isaac.FindByType(EntityType.ENTITY_FAMILIAR, PROXY_VARIANT)) do
             local proxy = entity:ToFamiliar()
             if proxy and proxy:GetData().GoldenEyeWeaponProxy then
@@ -514,7 +521,7 @@ function GoldenEye.Register(mod, itemId, familiarVariant, weaponAdapter)
         end
 
         if isValidTarget(data.target) then
-            local aim = data.target.Position - familiar.Position
+            local aim = GoldenEye.Targeting.GetPosition(data.target) - familiar.Position
             data.direction = getDirectionName(aim)
 
             local shots = proxy:GetActiveWeaponNumFired()
@@ -576,6 +583,16 @@ function GoldenEye.Register(mod, itemId, familiarVariant, weaponAdapter)
 
     mod:AddCallback(ModCallbacks.MC_POST_FAMILIAR_FIRE_PROJECTILE, function(_, tear)
         weaponAdapter.ScaleTear(tear)
+        local proxy = weaponAdapter.GetProxy(tear.SpawnerEntity or tear.Parent)
+        local owner = proxy and getProxyOwner(proxy)
+        local target = owner and getData(owner).target
+        if target and GoldenEye.Targeting.IsProp(target) then
+            local position = GoldenEye.Targeting.GetPosition(target)
+            local direction = position and (position - tear.Position)
+            if direction and direction:LengthSquared() > 0 then
+                tear.Velocity = direction:Resized(tear.Velocity:Length())
+            end
+        end
     end, PROXY_VARIANT)
 
     mod:AddCallback(ModCallbacks.MC_POST_FAMILIAR_FIRE_BRIMSTONE, function(_, laser)

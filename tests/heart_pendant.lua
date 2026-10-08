@@ -26,8 +26,8 @@ local npc = {
     ToNPC = function(self) return self end,
     HasEntityFlags = function() return false end,
 }
-local bracelet = dofile("scripts/golden_bracelet.lua")
-bracelet.Register(mod, 1001)
+local pendant = dofile("scripts/heart_pendant.lua")
+pendant.Register(mod, 1001)
 callbacks[ModCallbacks.MC_FAMILIAR_UPDATE](nil, familiar)
 assert(familiar.MaxHitPoints == 12 and familiar.HitPoints == 12)
 for _ = 2, 16 do
@@ -44,9 +44,31 @@ local hit = callbacks[ModCallbacks.MC_ENTITY_TAKE_DMG](nil, npc, 10,
 assert(hit.Damage == 11)
 assert(callbacks[ModCallbacks.MC_ENTITY_TAKE_DMG](nil, npc, 10,
     0, { Entity = player }, 0) == nil)
+
+local weapon = {
+    delay = 30,
+    GetFireDelay = function(self) return self.delay end,
+    GetMaxFireDelay = function() return 30 end,
+    SetFireDelay = function(self, value) self.delay = value end,
+}
+local incubus = {
+    Player = player,
+    FireCooldown = 30,
+    data = {},
+    GetWeapon = function() return weapon end,
+    GetData = function(self) return self.data end,
+}
+callbacks[ModCallbacks.MC_FAMILIAR_UPDATE](nil, incubus)
+assert(weapon.delay == 29 and incubus.FireCooldown == 30)
+for _ = 2, 16 do
+    weapon.delay = weapon.delay - 1
+    callbacks[ModCallbacks.MC_FAMILIAR_UPDATE](nil, incubus)
+end
+assert(weapon.delay == 0)
+
 player.count = 0
 callbacks[ModCallbacks.MC_FAMILIAR_UPDATE](nil, familiar)
 assert(familiar.MaxHitPoints == 10 and familiar.HitPoints == 10)
 assert(callbacks[ModCallbacks.MC_ENTITY_TAKE_DMG](nil, npc, 10,
     0, { Entity = familiar }, 0) == nil)
-print("golden_bracelet: OK")
+print("heart_pendant: OK")
