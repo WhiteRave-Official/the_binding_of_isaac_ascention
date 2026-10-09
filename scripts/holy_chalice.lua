@@ -6,6 +6,7 @@ local Multishot = include("scripts.holy_chalice_multishot")
 local Splash = include("scripts.holy_chalice_splash")
 local Tammy = include("scripts.holy_chalice_tammy")
 local Flight = include("scripts.holy_chalice_flight")
+local Proxy = include("scripts.holy_chalice_proxy")
 local IDLE_COSTUME = Isaac.GetCostumeIdByPath("gfx/characters/holy_chalice.anm2")
 local SHOOT_COSTUME = Isaac.GetCostumeIdByPath("gfx/characters/holy_chalice_shoot.anm2")
 
@@ -201,7 +202,15 @@ local function configureBubble(tear)
     tear.Scale = math.min(2.55,
         tear.Scale * math.max(0.55, math.sqrt(damageMultiplier)))
     syncBubbleSize(tear)
-    tear.Velocity = tear.Velocity:Rotated(
+    local launchVelocity = tear.Velocity
+    if tear.WaitFrames and tear.WaitFrames > 0
+        and tear.ContinueVelocity
+        and tear.ContinueVelocity:LengthSquared() > 0.01 then
+        launchVelocity = tear.ContinueVelocity
+    elseif launchVelocity:LengthSquared() <= 0.01 and data.launchVelocity then
+        launchVelocity = data.launchVelocity
+    end
+    tear.Velocity = launchVelocity:Rotated(
         (rng:RandomFloat() * 2 - 1) * data.angleSpread)
     data.speed = tear.Velocity:Length()
     if data.speed > 0.01 then
@@ -234,7 +243,11 @@ local function fireBubble(player, itemId, position, velocity, scale,
     local data = tear:GetData()[TEAR_KEY]
     data.angleSpread = spread or 0
     data.damageRoll = roll
+    data.launchVelocity = velocity
     configureBubble(tear)
+    if player:HasCollectible(CollectibleType.COLLECTIBLE_ANTI_GRAVITY) then
+        Flight.HoldForAntiGravity(data, tear)
+    end
     tear.Scale = math.min(2.55, tear.Scale * (scale or 1))
     tear:ResetSpriteScale(true)
     syncBubbleSize(tear)
@@ -333,10 +346,15 @@ local function fireFamiliarStream(familiar, itemId, direction)
     local tear = familiar:FireProjectile(aim)
     playerData.HolyChaliceFiringCustom = nil
     if tear then
+        local proxyShot = Proxy.Adopt(tear, player)
         markBubble(tear, itemId, player, true)
         local data = tear:GetData()[TEAR_KEY]
+        if proxyShot then data.damageFactor = 0.15 end
         data.angleSpread = BUBBLE_ANGLE_SPREAD
         configureBubble(tear)
+        if player:HasCollectible(CollectibleType.COLLECTIBLE_ANTI_GRAVITY) then
+            Flight.HoldForAntiGravity(data, tear)
+        end
     end
     local facing = headDirection(aim)
     familiar.ShootDirection = facing
@@ -345,6 +363,7 @@ local function fireFamiliarStream(familiar, itemId, direction)
     data.HolyChaliceShotFrame = Game():GetFrameCount()
     data.HolyChaliceShotFacing = facing
     familiar:PlayShootAnim(facing)
+    return tear
 end
 
 local function popBubble(tear, data)
@@ -361,6 +380,7 @@ local function popBubble(tear, data)
     end
     local position = tear.Position
     local damage = owner.Damage * BURST_DAMAGE_MULTIPLIER
+        * (data.damageFactor or 1)
     for _, entity in ipairs(Isaac.FindInRadius(position, BURST_RADIUS,
         EntityPartition.ENEMY)) do
         local npc = entity:ToNPC()
@@ -398,6 +418,46 @@ local function popBubble(tear, data)
     if not data.renderSprite then tear.Visible = false end
 end
 
+function HolyChalice.IsMiniStreamMode(player, itemId)
+    return player and itemId and player:HasCollectible(itemId)
+        and attackMode(player) == "bubble"
+end
+
+function HolyChalice.FireMiniStream(proxy, mini, aim, itemId)
+    local player = proxy.Player
+    if not HolyChalice.IsMiniStreamMode(player, itemId) then return false end
+    if not aim or aim:LengthSquared() <= 0.01 then
+        mini:GetData().AscentionMiniIsaacAim = nil
+        return true
+    end
+    if player:GetData().GoldenEyeBlockedShooting or not player:CanShoot() then
+        return true
+    end
+    local frame = Game():GetFrameCount()
+    local data = proxy:GetData()
+    if frame < (data.HolyChaliceNextShotFrame or frame) then return true end
+    local interval = math.max(1,
+        STREAM_INTERVAL_AT_BASE_RATE * (player.MaxFireDelay + 1)
+            / BASE_FIRE_DELAY)
+    data.HolyChaliceNextShotFrame = frame + interval
+    local miniData = mini:GetData()
+    miniData.AscentionMiniIsaacAim = aim
+    miniData.AscentionMiniIsaacTearShotFrame = frame
+    miniData.AscentionMiniIsaacLastShotFrame = frame
+    miniData.AscentionMiniIsaacLastShotVelocity = aim
+    local tear = fireFamiliarStream(proxy, itemId, aim:Normalized())
+    local traces = data.HolyChaliceMiniShotTraces or 0
+    if traces < 2 then
+        data.HolyChaliceMiniShotTraces = traces + 1
+        if Isaac.DebugString then
+            Isaac.DebugString("[AscentionHolyChalice] mini_stream proxy="
+                .. tostring(proxy.InitSeed) .. " tear="
+                .. tostring(tear and tear.InitSeed or "nil"))
+        end
+    end
+    return true
+end
+
 function HolyChalice.Register(mod, itemId)
     local bloodLaserSamples = 0
     Synergies.Register(mod)
@@ -432,6 +492,8 @@ function HolyChalice.Register(mod, itemId)
                 or not isShootAction(action) then
                 return
             end
+            if AscentionNative and AscentionNative.FiringProxySeed
+                and AscentionNative.FiringProxySeed() ~= 0 then return end
             if hook == InputHook.GET_ACTION_VALUE then return 0 end
             if hook == InputHook.IS_ACTION_PRESSED
                 or hook == InputHook.IS_ACTION_TRIGGERED then return false end
@@ -503,6 +565,7 @@ function HolyChalice.Register(mod, itemId)
     end)
 
     local function updateMirroringFamiliar(_, familiar)
+        if Proxy.IsMini(familiar) then return end
         local player = familiar.Player
         if not player or not player:HasCollectible(itemId)
             or player:GetData().GoldenEyeBlockedShooting
@@ -554,7 +617,11 @@ function HolyChalice.Register(mod, itemId)
             local familiarMode = attackMode(familiarOwner)
             if familiarMode == "bubble" or familiarMode == "technology_2"
                 or familiarMode == "monstro" then
+                local proxyShot = Proxy.Adopt(tear, familiarOwner)
                 markBubble(tear, itemId, familiarOwner, true)
+                if proxyShot then
+                    tear:GetData()[TEAR_KEY].damageFactor = 0.15
+                end
                 configureBubble(tear)
                 return
             end
@@ -564,6 +631,12 @@ function HolyChalice.Register(mod, itemId)
         if player and player:HasCollectible(itemId) then
             local mode = attackMode(player)
             if mode == "bubble" then
+                if Proxy.Adopt(tear, player) then
+                    markBubble(tear, itemId, player, true)
+                    tear:GetData()[TEAR_KEY].damageFactor = 0.15
+                    configureBubble(tear)
+                    return
+                end
                 if Tammy.IsBurst(player) then
                     markBubble(tear, itemId, player, true)
                     local data = tear:GetData()[TEAR_KEY]
@@ -668,7 +741,9 @@ function HolyChalice.Register(mod, itemId)
             local owner = ownerEntity and ownerEntity:ToPlayer()
             if owner and owner:Exists() and owner:HasCollectible(itemId) then
                 markBubble(child, itemId, owner, true)
-                child:GetData()[TEAR_KEY].splitChild = true
+                local data = child:GetData()[TEAR_KEY]
+                data.splitChild = true
+                data.damageFactor = sourceData.damageFactor
                 configureBubble(child)
             end
         end)
@@ -755,6 +830,9 @@ function HolyChalice.Register(mod, itemId)
         tear.FallingAcceleration = 0
         local ownerEntity = data.owner and data.owner.Ref
         local owner = ownerEntity and ownerEntity:ToPlayer()
+        if data.antiGravityHeld and owner and not shootInput(owner) then
+            Flight.ReleaseAntiGravity(data, tear)
+        end
         if Flight.Update(tear, data, owner) then popBubble(tear, data) end
     end)
 

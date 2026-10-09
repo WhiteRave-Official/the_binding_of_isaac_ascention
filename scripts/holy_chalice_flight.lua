@@ -6,6 +6,7 @@ local BRAIN_BOOST_TICKS = 8
 local SHARP_TURN_DOT = 0.7
 local REFLECTION_DRAG = 0.92
 local REFLECTION_PULL = 0.018
+local ANTI_GRAVITY_HOLD_TICKS = 90
 
 local function hasTrinket(owner, trinket)
     return owner and owner:HasTrinket(trinket)
@@ -56,7 +57,38 @@ function Flight.Init(data, tear, owner)
     end
 end
 
+function Flight.HoldForAntiGravity(data, tear)
+    if tear.Velocity:LengthSquared() <= 0.01 then return end
+    data.antiGravityVelocity = tear.Velocity
+    data.antiGravityHeld = true
+    data.antiGravityHoldAge = 0
+    tear.WaitFrames = 0
+    tear.ContinueVelocity = Vector.Zero
+    tear.Velocity = Vector.Zero
+end
+
+function Flight.ReleaseAntiGravity(data, tear)
+    if not data.antiGravityHeld then return end
+    data.antiGravityHeld = nil
+    tear.WaitFrames = 0
+    tear.ContinueVelocity = data.antiGravityVelocity
+    tear.Velocity = data.antiGravityVelocity
+    data.lastPosition = tear.Position
+end
+
 function Flight.Update(tear, data, owner)
+    if data.antiGravityHeld then
+        data.antiGravityHoldAge = data.antiGravityHoldAge + 1
+        if data.antiGravityHoldAge >= ANTI_GRAVITY_HOLD_TICKS then
+            Flight.ReleaseAntiGravity(data, tear)
+        else
+            tear.WaitFrames = 0
+            tear.ContinueVelocity = Vector.Zero
+            tear.Velocity = Vector.Zero
+            return false
+        end
+    end
+    if tear.WaitFrames and tear.WaitFrames > 0 then return false end
     if data.maxAgeRange ~= data.range then
         data.maxAge = math.min(240,
             math.max(90, math.ceil(data.range / math.max(1, data.speed)) * 6))

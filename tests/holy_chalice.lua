@@ -28,7 +28,9 @@ CollectibleType = { COLLECTIBLE_BRIMSTONE = 101, COLLECTIBLE_TECH_X = 102,
     COLLECTIBLE_TECHNOLOGY = 113, COLLECTIBLE_TECHNOLOGY_2 = 114,
     COLLECTIBLE_LUDOVICO_TECHNIQUE = 115,
     COLLECTIBLE_INCUBUS = 116, COLLECTIBLE_TWISTED_PAIR = 117,
-    COLLECTIBLE_TAMMYS_HEAD = 118, COLLECTIBLE_MY_REFLECTION = 119 }
+    COLLECTIBLE_TAMMYS_HEAD = 118, COLLECTIBLE_MY_REFLECTION = 119,
+    COLLECTIBLE_ANTI_GRAVITY = 120 }
+PlayerType = { PLAYER_LILITH = 10 }
 TrinketType = { TRINKET_RING_WORM = 11, TRINKET_BRAIN_WORM = 144 }
 EffectVariant.BRIMSTONE_BALL = 113
 ButtonAction = { ACTION_SHOOTLEFT = 1, ACTION_SHOOTRIGHT = 2,
@@ -51,6 +53,7 @@ local function vector(x, y)
         Y = y,
         LengthSquared = function() return x * x + y * y end,
         Length = function() return math.sqrt(x * x + y * y) end,
+        GetAngleDegrees = function() return math.deg(math.atan(y, x)) end,
         Normalized = function() local n = math.sqrt(x * x + y * y); return vector(x / n, y / n) end,
         Resized = function(_, length)
             local n = math.sqrt(x * x + y * y)
@@ -133,7 +136,9 @@ local player = {
     nativeShots = 0,
     nativeCharge = 0,
     Position = vector(0, 0),
+    Velocity = vector(0, 0),
     ControllerIndex = 0,
+    GetPlayerType = function() return 0 end,
     GetData = function(self) self.data = self.data or {}; return self.data end,
     GetWeapon = function(self)
         self.weapon = self.weapon or {
@@ -238,7 +243,19 @@ Isaac = {
 
 local synergyModule
 local included = {}
+local scopedProxy
+local activeProxySeed = 0
+AscentionNative = { FiringProxySeed = function() return activeProxySeed end }
 include = function(path)
+    if path == "scripts.minisaac.arclight_context" then
+        return {
+            ForProjectile = function(tear)
+                return tear:GetData().TestProxy and scopedProxy or nil
+            end,
+            MiniForSource = function(proxy) return proxy.TestMini end,
+            Aim = function(proxy) return proxy.TestAim end,
+        }
+    end
     if not included[path] then
         included[path] = dofile(path:gsub("%.", "/") .. ".lua")
     end
@@ -1071,4 +1088,119 @@ player.items[CollectibleType.COLLECTIBLE_HAEMOLACRIA] = nil
 assert(inputHook(mod, player, InputHook.GET_ACTION_VALUE,
     ButtonAction.ACTION_SHOOTRIGHT) == nil,
     "Brimstone + Tech X without Haemolacria keeps native rings")
+player.items = {}
+player.weaponKind = WeaponType.WEAPON_TEARS
+scopedProxy = { Player = player, TestMini = {},
+    TestAim = vector(0, 1), Position = vector(25, 30) }
+activeProxySeed = 42
+assert(inputHook(mod, player, InputHook.GET_ACTION_VALUE,
+    ButtonAction.ACTION_SHOOTRIGHT) == nil,
+    "Chalice must not suppress the proxy's synthetic shoot input")
+activeProxySeed = 0
+holdingAttack = false
+local proxyTear = player:FireTear(player.Position, vector(10, 0))
+proxyTear:GetData().TestProxy = true
+callbacks[ModCallbacks.MC_POST_FIRE_TEAR](mod, proxyTear)
+local proxyData = proxyTear:GetData()
+assert(not proxyTear.removed and proxyData.AscentionHolyChaliceBubble
+    and proxyData.AscentionHolyChaliceBubble.damageFactor == 0.15
+    and proxyData.AscentionMiniIsaacOwner.Ref.ToPlayer() == scopedProxy.TestMini
+    and proxyData.AscentionMiniIsaacNativeScaled
+    and proxyTear.CollisionDamage < player.Damage * 0.3
+    and proxyTear.Position == scopedProxy.Position
+    and math.abs(proxyTear.Velocity.x) < 0.001
+    and proxyTear.Velocity.y > 0,
+    "proxy must fire a scaled bubble without player shoot input")
+local preAimed = player:FireTear(player.Position, vector(0, 10))
+preAimed:GetData().TestProxy = true
+preAimed:GetData().AscentionMiniIsaacNativeAimed = true
+preAimed.Scale = 0.6
+callbacks[ModCallbacks.MC_POST_FIRE_TEAR](mod, preAimed)
+assert(preAimed:GetData().AscentionHolyChaliceBubble
+    and math.abs(preAimed.Scale - 0.6 * math.sqrt(0.9)) < 0.001,
+    "native-aimed proxy tears must not be visually scaled twice")
+local suppressed = player:FireTear(player.Position, vector(10, 0))
+callbacks[ModCallbacks.MC_POST_FIRE_TEAR](mod, suppressed)
+assert(suppressed.removed,
+    "ordinary player tear must still be suppressed in bubble mode")
+scopedProxy = nil
+
+player.items[CollectibleType.COLLECTIBLE_ANTI_GRAVITY] = true
+holdingAttack = true
+local originalFireTear = player.FireTear
+player.FireTear = function(self, position, velocity)
+    local shot = originalFireTear(self, position, velocity)
+    shot.Velocity = Vector.Zero
+    shot.ContinueVelocity = velocity
+    shot.WaitFrames = 60
+    return shot
+end
+local beforeAntiGravity = #shots
+update(2000)
+player.FireTear = originalFireTear
+assert(#shots > beforeAntiGravity)
+local held = shots[#shots]
+local heldData = held:GetData().AscentionHolyChaliceBubble
+assert(heldData.antiGravityHeld and heldData.speed > 0
+    and held.Velocity:LengthSquared() == 0,
+    "Anti-Gravity must store the native ContinueVelocity")
+for tick = 2001, 2089 do
+    frame = tick
+    callbacks[ModCallbacks.MC_POST_TEAR_UPDATE](mod, held)
+end
+assert(not heldData.popped and heldData.age == 0,
+    "held bubble must not consume lifetime or range")
+frame = 2090
+callbacks[ModCallbacks.MC_POST_TEAR_UPDATE](mod, held)
+assert(not heldData.antiGravityHeld and heldData.age == 1,
+    "old Anti-Gravity bubbles must launch while attack remains held")
+local beforeNewer = #shots
+update(2090)
+assert(#shots > beforeNewer)
+local newer = shots[#shots]
+local newerData = newer:GetData().AscentionHolyChaliceBubble
+assert(newerData.antiGravityHeld)
+holdingAttack = false
+frame = 2091
+callbacks[ModCallbacks.MC_POST_TEAR_UPDATE](mod, newer)
+assert(not newerData.antiGravityHeld and newerData.age == 1
+    and newer.Velocity:LengthSquared() > 0,
+    "releasing attack must launch the held bubble")
+player.items[CollectibleType.COLLECTIBLE_ANTI_GRAVITY] = nil
+local mini = { GetData = function(self) self.data = self.data or {}; return self.data end }
+local proxy = {
+    Player = player, TestMini = mini, TestAim = vector(0, 1),
+    Position = vector(25, 30),
+    GetData = function(self) self.data = self.data or {}; return self.data end,
+    FireProjectile = function(self, aim)
+        local shot = player:FireTear(self.Position, aim * 10)
+        shot.SpawnerEntity = self
+        shot.Parent = self
+        shot:GetData().TestProxy = true
+        return shot
+    end,
+    PlayShootAnim = function() end,
+}
+scopedProxy = proxy
+frame = 3000
+local beforeMini = #shots
+local separateChalice = dofile("scripts/holy_chalice.lua")
+assert(not separateChalice.FireMiniStream(proxy, mini, vector(0, 1)),
+    "an unregistered module instance cannot infer the item ID")
+assert(separateChalice.FireMiniStream(proxy, mini, vector(0, 1), 9)
+    and #shots == beforeMini + 1
+    and shots[#shots]:GetData().AscentionHolyChaliceBubble.damageFactor == 0.15
+    and mini:GetData().AscentionMiniIsaacTearShotFrame == frame,
+    "mini must fire a bubble at its own target without player input")
+frame = 3001
+assert(chalice.FireMiniStream(proxy, mini, vector(0, 1), 9)
+    and #shots == beforeMini + 1,
+    "mini bubble stream must obey its own fire cadence")
+frame = 3010
+assert(chalice.FireMiniStream(proxy, mini, vector(0, 1), 9)
+    and #shots == beforeMini + 2)
+assert(chalice.FireMiniStream(proxy, mini, nil, 9)
+    and #shots == beforeMini + 2
+    and mini:GetData().AscentionMiniIsaacAim == nil,
+    "mini must not fire without a target")
 print("holy chalice: OK")

@@ -377,7 +377,7 @@ function Router.IsProxy(entity)
     return familiar and familiar:GetData()[PROXY_KEY] or false
 end
 
-function Router.Register(mod)
+function Router.Register(mod, holyChalice, holyChaliceId)
     if not native or native.abi ~= 1 then
         Isaac.DebugString("[AscentionMiniIsaac] native module unavailable; manual combat remains active")
         return
@@ -494,6 +494,10 @@ function Router.Register(mod)
         local weapon = proxy:GetWeapon()
         local kind = weapon and weapon:GetWeaponType()
         local target = attackTargetFor(mini, proxy)
+        local aim = target and (target.Position - mini.Position) or nil
+        if holyChalice.FireMiniStream(proxy, mini, aim, holyChaliceId) then
+            return true
+        end
         if not target then
             mini:GetData().AscentionMiniIsaacAim = nil
             if blockedTargetSamples < 8 then
@@ -669,6 +673,7 @@ function Router.Register(mod)
         if not Router.IsProxy(proxy) then return end
         local mini = ownerOf(proxy)
         if not mini then return end
+        if holyChalice.IsMiniStreamMode(proxy.Player, holyChaliceId) then return end
         proxy.Position = mini.Position
         proxy.Velocity = Vector.Zero
 

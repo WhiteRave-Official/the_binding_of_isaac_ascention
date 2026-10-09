@@ -145,4 +145,28 @@ for _ = 1, 30 do
     assert(slowTear.Velocity:Length() <= 4.001,
         "the return must not restore the initial ten-unit shot speed")
 end
+local held, heldData = bubble(100)
+Flight.HoldForAntiGravity(heldData, held)
+assert(heldData.antiGravityHeld and held.Velocity:LengthSquared() == 0
+    and held.ContinueVelocity:LengthSquared() == 0)
+local newer, newerData = bubble(100)
+for _ = 1, 30 do
+    assert(not Flight.Update(held, heldData, owner))
+end
+Flight.HoldForAntiGravity(newerData, newer)
+for _ = 31, 89 do
+    assert(not Flight.Update(held, heldData, owner))
+    assert(not Flight.Update(newer, newerData, owner))
+end
+assert(heldData.age == 0 and heldData.travel == 0,
+    "held bubbles must not age or exhaust range")
+assert(not Flight.Update(held, heldData, owner))
+assert(not heldData.antiGravityHeld and held.Velocity.X == 10
+    and held.ContinueVelocity.X == 10,
+    "the oldest bubble must release after 90 held frames")
+assert(newerData.antiGravityHeld and newer.Velocity:LengthSquared() == 0,
+    "newer bubbles must remain held until their own timeout")
+Flight.ReleaseAntiGravity(newerData, newer)
+assert(not newerData.antiGravityHeld and newer.Velocity.X == 10,
+    "releasing the attack must still launch remaining bubbles")
 print("holy chalice flight: OK")
