@@ -1033,4 +1033,42 @@ for _, variant in ipairs({ FamiliarVariant.INCUBUS,
         and familiar.shootDirection == Direction.RIGHT,
         "render must restore the facing of the familiar's own shot")
 end
+player.items = {
+    [CollectibleType.COLLECTIBLE_BRIMSTONE] = true,
+    [CollectibleType.COLLECTIBLE_HAEMOLACRIA] = true,
+    [CollectibleType.COLLECTIBLE_TECHNOLOGY] = true,
+}
+player.weaponKind = WeaponType.WEAPON_LASER
+assert(inputHook(mod, player, InputHook.GET_ACTION_VALUE,
+    ButtonAction.ACTION_SHOOTRIGHT) == 0,
+    "Technology must not switch blood Brimstone bubbles to native fire")
+local beforeQuadruple = #shots
+update(1000)
+assert(#shots > beforeQuadruple
+    and shots[#shots]:GetData().AscentionHolyChaliceBubble.renderSprite,
+    "Brimstone + Haemolacria + Technology must fire Chalice bubbles")
+player.items[CollectibleType.COLLECTIBLE_HAEMOLACRIA] = nil
+assert(inputHook(mod, player, InputHook.GET_ACTION_VALUE,
+    ButtonAction.ACTION_SHOOTRIGHT) == nil,
+    "Technology + Brimstone without Haemolacria keeps native charge")
+player.items[CollectibleType.COLLECTIBLE_TECHNOLOGY] = nil
+player.items[CollectibleType.COLLECTIBLE_TECH_X] = true
+player.items[CollectibleType.COLLECTIBLE_HAEMOLACRIA] = true
+player.weaponKind = WeaponType.WEAPON_TECH_X
+assert(inputHook(mod, player, InputHook.GET_ACTION_VALUE,
+    ButtonAction.ACTION_SHOOTRIGHT) == 0,
+    "Tech X must not replace blood Brimstone bubbles with native rings")
+local beforeTechX = #shots
+update(1020)
+assert(#shots > beforeTechX
+    and shots[#shots]:GetData().AscentionHolyChaliceBubble.renderSprite,
+    "Brimstone + Haemolacria + Tech X must fire Chalice bubbles")
+player.items[CollectibleType.COLLECTIBLE_TECHNOLOGY] = true
+assert(inputHook(mod, player, InputHook.GET_ACTION_VALUE,
+    ButtonAction.ACTION_SHOOTRIGHT) == 0,
+    "Technology and Tech X together must keep the blood bubble route")
+player.items[CollectibleType.COLLECTIBLE_HAEMOLACRIA] = nil
+assert(inputHook(mod, player, InputHook.GET_ACTION_VALUE,
+    ButtonAction.ACTION_SHOOTRIGHT) == nil,
+    "Brimstone + Tech X without Haemolacria keeps native rings")
 print("holy chalice: OK")

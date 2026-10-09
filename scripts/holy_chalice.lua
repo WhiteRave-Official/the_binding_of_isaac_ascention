@@ -71,6 +71,12 @@ local function attackMode(player)
     end
     local brimstone = player:HasCollectible(CollectibleType.COLLECTIBLE_BRIMSTONE)
     local techX = player:HasCollectible(CollectibleType.COLLECTIBLE_TECH_X)
+    if brimstone
+        and player:HasCollectible(CollectibleType.COLLECTIBLE_HAEMOLACRIA)
+        and (techX or player:HasCollectible(
+            CollectibleType.COLLECTIBLE_TECHNOLOGY)) then
+        return "bubble"
+    end
     local brimWeapon = player:HasWeaponType(WeaponType.WEAPON_BRIMSTONE)
     local techXWeapon = player:HasWeaponType(WeaponType.WEAPON_TECH_X)
     if brimstone and techX and (brimWeapon or techXWeapon) then
