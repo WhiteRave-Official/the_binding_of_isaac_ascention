@@ -11,6 +11,9 @@
 namespace {
 struct ProxyState {
     unsigned int seed;
+    Vector targetDirection{ 0.0f, 0.0f };
+    bool hasTarget = false;
+    bool updateShooting = false;
     int lastTick = -1;
     int releaseFrames = 0;
     float syntheticChocolateCharge = 0.0f;
@@ -34,6 +37,7 @@ struct ProxyState {
     bool chocolateMode = false;
     bool allowChocolateProjectile = false;
     unsigned int externalProjectileCalls = 0;
+    unsigned int fetusFireCalls = 0;
     Vector scopedProjectileAim{ 0.0f, 0.0f };
     Vector externalProjectileAim{ 0.0f, 0.0f };
     Vector scopedProjectileVelocity{ 0.0f, 0.0f };
@@ -55,6 +59,7 @@ struct ProxyState {
 std::unordered_map<Entity_Familiar*, ProxyState> proxies;
 bool firingProxy = false;
 ProxyState* inputProxy = nullptr;
+ProxyState* updatingProxy = nullptr;
 Vector inputDirection{ 0.0f, 0.0f };
 bool inputShooting = false;
 bool inputTriggered = false;
@@ -114,12 +119,40 @@ int registerProxy(lua_State* state) {
 }
 
 int unregisterProxy(lua_State* state) {
-    proxies.erase(familiarArg(state));
+    auto* familiar = familiarArg(state);
+    const auto found = proxies.find(familiar);
+    if (found != proxies.end()) {
+        if (inputProxy == &found->second) inputProxy = nullptr;
+        if (updatingProxy == &found->second) updatingProxy = nullptr;
+        proxies.erase(found);
+    }
     return 0;
 }
 
 int resetProxies(lua_State*) {
+    inputProxy = nullptr;
+    updatingProxy = nullptr;
     proxies.clear();
+    return 0;
+}
+
+int primeProxy(lua_State* state) {
+    auto* familiar = familiarArg(state);
+    const float x = static_cast<float>(luaL_checknumber(state, 2));
+    const float y = static_cast<float>(luaL_checknumber(state, 3));
+    if (!familiar || !registered(familiar)) return 0;
+    auto& proxy = proxies.at(familiar);
+    const float length = std::sqrt(x * x + y * y);
+    const bool wasUpdatingShooting = proxy.updateShooting;
+    proxy.hasTarget = lua_toboolean(state, 4) && length > 0.001f;
+    proxy.updateShooting = proxy.hasTarget;
+    proxy.targetDirection = proxy.hasTarget
+        ? Vector{ x / length, y / length } : Vector{ 0.0f, 0.0f };
+    if (updatingProxy == &proxy) {
+        inputDirection = proxy.targetDirection;
+        inputShooting = proxy.hasTarget;
+        inputTriggered = proxy.hasTarget && !wasUpdatingShooting;
+    }
     return 0;
 }
 
@@ -164,6 +197,7 @@ int diagnostics(lua_State* state) {
     lua_pushinteger(state, proxy.projectileCalls); lua_setfield(state, -2, "projectiles");
     lua_pushinteger(state, proxy.suppressedProjectiles); lua_setfield(state, -2, "suppressed_projectiles");
     lua_pushinteger(state, proxy.externalProjectileCalls); lua_setfield(state, -2, "external_projectiles");
+    lua_pushinteger(state, proxy.fetusFireCalls); lua_setfield(state, -2, "fetus_fires");
     lua_pushnumber(state, proxy.scopedProjectileAim.x); lua_setfield(state, -2, "scoped_aim_x");
     lua_pushnumber(state, proxy.scopedProjectileAim.y); lua_setfield(state, -2, "scoped_aim_y");
     lua_pushnumber(state, proxy.externalProjectileAim.x); lua_setfield(state, -2, "external_aim_x");
@@ -223,6 +257,7 @@ int tickProxy(lua_State* state) {
     if (!syntheticChocolateLaser) proxy.syntheticChocolateCharge = 0.0f;
     const bool knifeWeapon = weapon->GetWeaponType() == WEAPON_KNIFE;
     const bool spiritSwordWeapon = weapon->GetWeaponType() == WEAPON_SPIRIT_SWORD;
+    const bool fetusWeapon = weapon->GetWeaponType() == WEAPON_FETUS;
     if (spiritSwordWeapon) proxy.suppressProjectile = true;
     if (!spiritSwordWeapon) proxy.spiritSwordCharge = 0.0f;
     bool shooting = hasTarget;
@@ -264,6 +299,10 @@ int tickProxy(lua_State* state) {
     const int previousShots = weapon->GetNumFired();
     const unsigned int previousTechX = proxy.techXCalls;
     Entity_Player* owner = familiar->_player;
+    auto* previousInputProxy = inputProxy;
+    const Vector previousInputDirection = inputDirection;
+    const bool previousInputShooting = inputShooting;
+    const bool previousInputTriggered = inputTriggered;
     inputProxy = &proxy;
     inputDirection = direction;
     inputShooting = shooting;
@@ -306,6 +345,8 @@ int tickProxy(lua_State* state) {
             *weapon->GetCharge() = 0.0f;
         } else if (spiritSwordWeapon) {
             // The only Fire call for this sword was the full-charge release above.
+        } else if (fetusWeapon) {
+            // C Section releases through Weapon::Fire, not Familiar::Shoot.
         } else if (proxy.chocolateMode && weapon->GetNumFired() != previousShots) {
             // Chocolate Milk already released through Weapon::Fire; Shoot would add another tear.
             ++proxy.automaticChocolateShots;
@@ -320,7 +361,10 @@ int tickProxy(lua_State* state) {
         if (techXOwner) proxy.releaseTechXCalls = proxy.techXCalls - previousTechX;
     }
     firingProxy = false;
-    inputProxy = nullptr;
+    inputProxy = previousInputProxy;
+    inputDirection = previousInputDirection;
+    inputShooting = previousInputShooting;
+    inputTriggered = previousInputTriggered;
     proxy.wasShooting = shooting;
     lua_pushboolean(state, releaseCharge && (knifeWeapon || syntheticChocolateLaser)
         || weapon->GetNumFired() != previousShots);
@@ -332,17 +376,42 @@ int tickProxy(lua_State* state) {
 
 void registerApi(lua_State* state) {
     lua_newtable(state);
-    lua_pushinteger(state, 1); lua_setfield(state, -2, "abi");
+    lua_pushinteger(state, 2); lua_setfield(state, -2, "abi");
     lua_pushcfunction(state, registerProxy); lua_setfield(state, -2, "RegisterProxy");
     lua_pushcfunction(state, unregisterProxy); lua_setfield(state, -2, "UnregisterProxy");
     lua_pushcfunction(state, resetProxies); lua_setfield(state, -2, "ResetProxies");
     lua_pushcfunction(state, getInputReads); lua_setfield(state, -2, "GetInputReads");
     lua_pushcfunction(state, isRegistered); lua_setfield(state, -2, "IsRegistered");
+    lua_pushcfunction(state, primeProxy); lua_setfield(state, -2, "PrimeProxy");
     lua_pushcfunction(state, firingProxySeed); lua_setfield(state, -2, "FiringProxySeed");
     lua_pushcfunction(state, diagnostics); lua_setfield(state, -2, "Diagnostics");
     lua_pushcfunction(state, tickProxy); lua_setfield(state, -2, "TickProxy");
     lua_setglobal(state, "AscentionNative");
 }
+}
+
+HOOK_METHOD(Entity_Familiar, Update, () -> void) {
+    if (!registered(this)) {
+        super();
+        return;
+    }
+    auto& proxy = proxies.at(this);
+    auto* previousInputProxy = inputProxy;
+    auto* previousUpdatingProxy = updatingProxy;
+    const Vector previousInputDirection = inputDirection;
+    const bool previousInputShooting = inputShooting;
+    const bool previousInputTriggered = inputTriggered;
+    updatingProxy = &proxy;
+    inputProxy = &proxy;
+    inputDirection = proxy.targetDirection;
+    inputShooting = proxy.hasTarget;
+    inputTriggered = false;
+    super();
+    inputProxy = previousInputProxy;
+    updatingProxy = previousUpdatingProxy;
+    inputDirection = previousInputDirection;
+    inputShooting = previousInputShooting;
+    inputTriggered = previousInputTriggered;
 }
 
 HOOK_METHOD(Entity_Familiar, Shoot, () -> void) {
@@ -432,6 +501,12 @@ HOOK_METHOD(InputManager, IsActionTriggered, (int action, int controller, int un
 }
 
 HOOK_METHOD(Weapon, Fire, (const Vector& direction, bool shooting, bool interpolated) -> void) {
+    Entity* owner = GetOwner();
+    Entity_Familiar* familiar = owner ? owner->ToFamiliar() : nullptr;
+    if (familiar && registered(familiar) && updatingProxy == &proxies.at(familiar)
+        && GetWeaponType() == WEAPON_FETUS) {
+        ++proxies.at(familiar).fetusFireCalls;
+    }
     if (blockPlayerFire(this, direction)) return;
     super(direction, shooting, interpolated);
 }

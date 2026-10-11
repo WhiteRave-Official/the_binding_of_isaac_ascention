@@ -1,6 +1,6 @@
 local names = {
     "MC_POST_TEAR_INIT", "MC_POST_FIRE_TEAR", "MC_POST_FIRE_SPLIT_TEAR",
-    "MC_POST_TEAR_UPDATE", "MC_POST_ENTITY_TAKE_DMG", "MC_POST_EFFECT_UPDATE",
+    "MC_POST_TEAR_UPDATE", "MC_POST_TEAR_RENDER", "MC_POST_ENTITY_TAKE_DMG", "MC_POST_EFFECT_UPDATE",
     "MC_POST_LASER_INIT", "MC_POST_FIRE_TECH_LASER",
     "MC_POST_FIRE_TECH_X_LASER", "MC_POST_FIRE_KNIFE",
     "MC_POST_FIRE_BOMB", "MC_POST_LASER_UPDATE",
@@ -13,6 +13,16 @@ EntityFlag = { FLAG_FRIENDLY = 1 }
 EffectVariant = { RED_CANDLE_FLAME = 52 }
 EntityPtr = function(entity) return { Ref = entity } end
 EntityRef = function(entity) return { Entity = entity } end
+Color = function(_, _, _, alpha) return { A = alpha } end
+Sprite = function()
+    local value = { animation = "" }
+    function value:Load(path) self.filename = path end
+    function value:GetAnimation() return self.animation end
+    function value:Play(animation) self.animation = animation end
+    function value:Render(position) self.renderedAt = position end
+    function value:Update() self.updated = true end
+    return value
+end
 
 local vectorMeta = {}
 vectorMeta.__add = function(a, b) return setmetatable({ X = a.X + b.X, Y = a.Y + b.Y }, vectorMeta) end
@@ -41,6 +51,7 @@ local flames = {}
 local frame = 0
 Game = function() return { GetFrameCount = function() return frame end } end
 Isaac = {
+    WorldToRenderPosition = function(position) return position end,
     Spawn = function(_, variant, _, position, velocity, owner)
         assert(variant == EffectVariant.RED_CANDLE_FLAME)
         local effect = { Position = position, Velocity = velocity, SpawnerEntity = owner, data = {} }
@@ -64,6 +75,7 @@ function sprite:GetAnimation() return self.animation end
 function sprite:Play(animation) self.animation = animation end
 local tear = {
     InitSeed = 123, CollisionDamage = 2.5, SpawnerEntity = owner,
+    Position = Vector(0, 0), Scale = 1, Height = -20, Visible = true,
     Velocity = Vector.FromAngle(0), data = {}, flags = 0,
 }
 function tear:GetData() return self.data end
@@ -100,6 +112,21 @@ assert(sprite.FlipX and not sprite.FlipY)
 tear.Velocity = Vector(0, -1)
 callbacks[ModCallbacks.MC_POST_TEAR_UPDATE](nil, tear)
 assert(sprite.FlipY and not sprite.FlipX and sprite.animation == "MoveVert")
+local bubble = { popped = false }
+tear:GetData().AscentionHolyChaliceBubble = bubble
+sprite.filename = "gfx/projectiles/golden_tear_projectile.anm2"
+callbacks[ModCallbacks.MC_POST_TEAR_UPDATE](nil, tear)
+assert(sprite.filename == "gfx/projectiles/golden_tear_projectile.anm2",
+    "Rose must not replace the Chalice bubble sprite")
+callbacks[ModCallbacks.MC_POST_TEAR_RENDER](nil, tear)
+local overlay = tear:GetData().AscentionFlamingRoseBubbleOverlay
+assert(overlay and overlay.filename == "gfx/002.005_fire tear.anm2"
+    and overlay.renderedAt and overlay.updated,
+    "Rose must render a separate fire layer on the bubble")
+bubble.popped = true
+overlay.renderedAt = nil
+callbacks[ModCallbacks.MC_POST_TEAR_RENDER](nil, tear)
+assert(not overlay.renderedAt, "popped bubble must not render the Rose overlay")
 
 local onDamage = callbacks[ModCallbacks.MC_POST_ENTITY_TAKE_DMG]
 onDamage(nil, npc, 2.5, 0, { Entity = tear }, 0, nil)

@@ -1168,19 +1168,36 @@ assert(not newerData.antiGravityHeld and newerData.age == 1
     "releasing attack must launch the held bubble")
 player.items[CollectibleType.COLLECTIBLE_ANTI_GRAVITY] = nil
 local mini = { GetData = function(self) self.data = self.data or {}; return self.data end }
+mini.Exists = function() return true end
+local engineAim
 local proxy = {
     Player = player, TestMini = mini, TestAim = vector(0, 1),
     Position = vector(25, 30),
     GetData = function(self) self.data = self.data or {}; return self.data end,
     FireProjectile = function(self, aim)
-        local shot = player:FireTear(self.Position, aim * 10)
+        assert(mini:GetData().AscentionMiniIsaacAim == aim,
+            "proxy must expose the shot's aim before projectile creation")
+        local rawAim = engineAim or aim
+        local shot = player:FireTear(self.Position, rawAim * 10)
         shot.SpawnerEntity = self
         shot.Parent = self
         shot:GetData().TestProxy = true
+        local proxyData = self:GetData()
+        if proxyData.AscentionMiniIsaacTearSourceFrame ~= frame then
+            proxyData.AscentionMiniIsaacTearSourceFrame = frame
+            proxyData.AscentionMiniIsaacTearSource = rawAim
+        end
+        shot.Velocity = shot.Velocity:Rotated(
+            aim:GetAngleDegrees()
+                - proxyData.AscentionMiniIsaacTearSource:GetAngleDegrees())
+        shot:GetData().AscentionMiniIsaacNativeAimed = true
         return shot
     end,
     PlayShootAnim = function() end,
 }
+proxy:GetData().AscentionMiniIsaacProxyOwner = { Ref = mini }
+proxy.ToFamiliar = function(self) return self end
+proxy.ToPlayer = function() return nil end
 scopedProxy = proxy
 frame = 3000
 local beforeMini = #shots
@@ -1203,4 +1220,68 @@ assert(chalice.FireMiniStream(proxy, mini, nil, 9)
     and #shots == beforeMini + 2
     and mini:GetData().AscentionMiniIsaacAim == nil,
     "mini must not fire without a target")
+player.items[CollectibleType.COLLECTIBLE_INNER_EYE] = true
+frame = 3020
+beforeMini = #shots
+assert(chalice.FireMiniStream(proxy, mini, vector(0, 1), 9)
+    and #shots > beforeMini + 1,
+    "mini bubble stream must inherit multishot clusters")
+assert(math.abs(shots[beforeMini + 1].Velocity.X
+    - shots[beforeMini + 2].Velocity.X) > 0.01,
+    "mini multishot trajectories must not collapse onto proxy aim")
+player.items[CollectibleType.COLLECTIBLE_INNER_EYE] = nil
+player.items[CollectibleType.COLLECTIBLE_MONSTROS_LUNG] = true
+beforeMini = #shots
+engineAim = vector(1, 0)
+chalice.OnMiniNativeFire(proxy, mini, vector(1, 0), 9)
+assert(#shots >= beforeMini + 3,
+    "mini Monstro's Lung must fire bubbles without player input")
+local last = #shots
+assert(math.abs(shots[last - 1].Velocity.Y - shots[last].Velocity.Y) > 0.01,
+    "proxy must preserve spread despite identical raw player input")
+engineAim = nil
+player.items[CollectibleType.COLLECTIBLE_MONSTROS_LUNG] = nil
+player.items[CollectibleType.COLLECTIBLE_TECHNOLOGY] = true
+beforeMini = #shots
+chalice.OnMiniNativeFire(proxy, mini, vector(1, 0), 9)
+assert(#shots >= beforeMini + 2,
+    "mini Technology must receive Chalice supplemental bubbles")
+player.items[CollectibleType.COLLECTIBLE_TECHNOLOGY] = nil
+player.GetPlayerType = function() return PlayerType.PLAYER_LILITH end
+player.CanShoot = function() return false end
+assert(inputHook(mod, player, InputHook.GET_ACTION_VALUE,
+    ButtonAction.ACTION_SHOOTRIGHT) == nil,
+    "Lilith must retain native Incubus input")
+player.GetPlayerType = function() return 0 end
+player.CanShoot = function() return true end
+mini:GetData().AscentionMiniIsaacAim = vector(0, 1)
+player.items[CollectibleType.COLLECTIBLE_MONSTROS_LUNG] = true
+frame = 3030
+local function nativeMonstroTear()
+    local shot = player:FireTear(proxy.Position, vector(10, 0))
+    shot.SpawnerEntity = proxy
+    shot.Parent = proxy
+    shot:GetData().TestProxy = true
+    return shot
+end
+local firstMonstro = nativeMonstroTear()
+callbacks[ModCallbacks.MC_POST_FIRE_TEAR](mod, firstMonstro)
+local secondMonstro = nativeMonstroTear()
+callbacks[ModCallbacks.MC_POST_FIRE_TEAR](mod, secondMonstro)
+assert(firstMonstro.Scale > secondMonstro.Scale
+    and firstMonstro.CollisionDamage > secondMonstro.CollisionDamage,
+    "Chalice must boost only the first native Monstro bubble per volley")
+frame = 3031
+local baseEntity = {
+    ToFamiliar = function() return proxy end,
+    ToPlayer = function() return nil end,
+}
+local wrappedMonstro = nativeMonstroTear()
+wrappedMonstro.SpawnerEntity = baseEntity
+wrappedMonstro.Parent = baseEntity
+callbacks[ModCallbacks.MC_POST_FAMILIAR_FIRE_PROJECTILE](mod, wrappedMonstro)
+assert(wrappedMonstro:GetData().AscentionHolyChaliceBubble
+    and wrappedMonstro:GetData().HolyChaliceMiniMonstroBoosted,
+    "raw Entity source must be converted to Familiar before boost")
+player.items[CollectibleType.COLLECTIBLE_MONSTROS_LUNG] = nil
 print("holy chalice: OK")

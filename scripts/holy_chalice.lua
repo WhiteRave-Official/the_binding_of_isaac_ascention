@@ -91,7 +91,15 @@ local function attackMode(player)
     if player:HasCollectible(CollectibleType.COLLECTIBLE_TECHNOLOGY) then
         return "technology"
     end
-    if kind == WeaponType.WEAPON_TEARS then return "bubble" end
+    if kind == WeaponType.WEAPON_TEARS
+        or player:GetPlayerType() == PlayerType.PLAYER_LILITH then
+        return "bubble"
+    end
+end
+
+local function canFire(player)
+    return player:CanShoot()
+        or player:GetPlayerType() == PlayerType.PLAYER_LILITH
 end
 
 local function shootInput(player)
@@ -337,26 +345,46 @@ local function fireStream(player, itemId, direction)
     end
 end
 
-local function fireFamiliarStream(familiar, itemId, direction)
+local function fireFamiliarStream(familiar, itemId, direction, clusters)
     local player = familiar.Player
     local playerData = player:GetData()
     local rng = player:GetCollectibleRNG(itemId)
-    local aim = direction:Rotated((rng:RandomFloat() - 0.5) * 10)
-    playerData.HolyChaliceFiringCustom = true
-    local tear = familiar:FireProjectile(aim)
-    playerData.HolyChaliceFiringCustom = nil
-    if tear then
-        local proxyShot = Proxy.Adopt(tear, player)
-        markBubble(tear, itemId, player, true)
-        local data = tear:GetData()[TEAR_KEY]
-        if proxyShot then data.damageFactor = 0.15 end
-        data.angleSpread = BUBBLE_ANGLE_SPREAD
-        configureBubble(tear)
-        if player:HasCollectible(CollectibleType.COLLECTIBLE_ANTI_GRAVITY) then
-            Flight.HoldForAntiGravity(data, tear)
+    local proxyData = familiar:GetData()
+    local pointer = proxyData.AscentionMiniIsaacProxyOwner
+    local mini = pointer and pointer.Ref
+    local miniData = mini and mini:Exists() and mini:GetData()
+    local originalAim = miniData and miniData.AscentionMiniIsaacAim
+    local tear
+    for _, cluster in ipairs(clusters or { { angle = 0, size = 1 } }) do
+        for _ = 1, cluster.size do
+            local aim = direction:Rotated(cluster.angle
+                + (rng:RandomFloat() - 0.5) * 10)
+            if miniData then
+                miniData.AscentionMiniIsaacAim = aim
+                proxyData.AscentionMiniIsaacTearSourceFrame = nil
+            end
+            playerData.HolyChaliceFiringCustom = true
+            local shot = familiar:FireProjectile(aim)
+            playerData.HolyChaliceFiringCustom = nil
+            if shot then
+                local proxyShot = Proxy.Adopt(shot, player)
+                markBubble(shot, itemId, player, true)
+                local data = shot:GetData()[TEAR_KEY]
+                if proxyShot then data.damageFactor = 0.15 end
+                data.angleSpread = BUBBLE_ANGLE_SPREAD
+                configureBubble(shot)
+                if player:HasCollectible(CollectibleType.COLLECTIBLE_ANTI_GRAVITY) then
+                    Flight.HoldForAntiGravity(data, shot)
+                end
+                tear = shot
+            end
         end
     end
-    local facing = headDirection(aim)
+    if miniData then
+        miniData.AscentionMiniIsaacAim = originalAim
+        proxyData.AscentionMiniIsaacTearSourceFrame = nil
+    end
+    local facing = headDirection(direction)
     familiar.ShootDirection = facing
     familiar.LastDirection = facing
     local data = familiar:GetData()
@@ -364,6 +392,23 @@ local function fireFamiliarStream(familiar, itemId, direction)
     data.HolyChaliceShotFacing = facing
     familiar:PlayShootAnim(facing)
     return tear
+end
+
+local function boostMiniMonstroBubble(tear, familiar)
+    local proxy = familiar and familiar:ToFamiliar()
+    if not proxy or not Proxy.IsMini(proxy) or not proxy.Player
+        or proxy.Player:GetData().HolyChaliceFiringCustom then return end
+    local tearData = tear:GetData()
+    if tearData.HolyChaliceMiniMonstroBoosted then return end
+    tearData.HolyChaliceMiniMonstroBoosted = true
+    local proxyData = proxy:GetData()
+    local frame = Game():GetFrameCount()
+    if proxyData.HolyChaliceMiniMonstroBigFrame == frame then return end
+    proxyData.HolyChaliceMiniMonstroBigFrame = frame
+    tear.Scale = math.min(2.55, tear.Scale * 1.6)
+    tear.CollisionDamage = tear.CollisionDamage * 1.2
+    tear:ResetSpriteScale(true)
+    syncBubbleSize(tear)
 end
 
 local function popBubble(tear, data)
@@ -430,7 +475,7 @@ function HolyChalice.FireMiniStream(proxy, mini, aim, itemId)
         mini:GetData().AscentionMiniIsaacAim = nil
         return true
     end
-    if player:GetData().GoldenEyeBlockedShooting or not player:CanShoot() then
+    if player:GetData().GoldenEyeBlockedShooting or not canFire(player) then
         return true
     end
     local frame = Game():GetFrameCount()
@@ -445,7 +490,8 @@ function HolyChalice.FireMiniStream(proxy, mini, aim, itemId)
     miniData.AscentionMiniIsaacTearShotFrame = frame
     miniData.AscentionMiniIsaacLastShotFrame = frame
     miniData.AscentionMiniIsaacLastShotVelocity = aim
-    local tear = fireFamiliarStream(proxy, itemId, aim:Normalized())
+    local tear = fireFamiliarStream(proxy, itemId, aim:Normalized(),
+        Multishot.Clusters(player, player:GetCollectibleRNG(itemId)))
     local traces = data.HolyChaliceMiniShotTraces or 0
     if traces < 2 then
         data.HolyChaliceMiniShotTraces = traces + 1
@@ -456,6 +502,28 @@ function HolyChalice.FireMiniStream(proxy, mini, aim, itemId)
         end
     end
     return true
+end
+
+function HolyChalice.OnMiniNativeFire(proxy, mini, aim, itemId)
+    local player = proxy.Player
+    if not player or not itemId or not player:HasCollectible(itemId)
+        or not aim or aim:LengthSquared() <= 0.01 then return end
+    local mode = attackMode(player)
+    if mode ~= "monstro" and mode ~= "technology" then return end
+    local direction = aim:Normalized()
+    local rng = player:GetCollectibleRNG(itemId)
+    local count = mode == "monstro" and 3 + rng:RandomInt(4)
+        or 2 + rng:RandomInt(4)
+    if mode == "monstro" then
+        count = count + (#Multishot.Clusters(player, rng) - 1) * 2
+    end
+    count = math.min(count, 20)
+    for index = 1, count do
+        local spread = mode == "monstro" and 12 or 7
+        local angle = (index - (count + 1) / 2) * spread
+            + (rng:RandomFloat() - 0.5) * spread
+        fireFamiliarStream(proxy, itemId, direction:Rotated(angle))
+    end
 end
 
 function HolyChalice.Register(mod, itemId)
@@ -489,6 +557,7 @@ function HolyChalice.Register(mod, itemId)
             if not player or not player:HasCollectible(itemId)
                 or player:GetData().GoldenEyeBlockedShooting
                 or attackMode(player) ~= "bubble"
+                or player:GetPlayerType() == PlayerType.PLAYER_LILITH
                 or not isShootAction(action) then
                 return
             end
@@ -502,7 +571,7 @@ function HolyChalice.Register(mod, itemId)
     mod:AddCallback(ModCallbacks.MC_POST_PLAYER_UPDATE, function(_, player)
         if not player:HasCollectible(itemId)
             or player:GetData().GoldenEyeBlockedShooting
-            or not player:CanShoot() then
+            or not canFire(player) then
             setCostume(player, nil)
             return
         end
@@ -553,7 +622,7 @@ function HolyChalice.Register(mod, itemId)
         end
         data.HolyChaliceNativeMode = nil
         data.HolyChaliceNativeShotCount = nil
-        if not direction then return end
+        if not direction or player:GetPlayerType() == PlayerType.PLAYER_LILITH then return end
         local frame = Game():GetFrameCount()
         local nextShot = data.HolyChaliceNextShotFrame or frame
         if frame < nextShot then return end
@@ -567,9 +636,12 @@ function HolyChalice.Register(mod, itemId)
     local function updateMirroringFamiliar(_, familiar)
         if Proxy.IsMini(familiar) then return end
         local player = familiar.Player
+        if player and player:GetPlayerType() == PlayerType.PLAYER_LILITH then
+            return -- Her Incubus already receives the unblocked native input.
+        end
         if not player or not player:HasCollectible(itemId)
             or player:GetData().GoldenEyeBlockedShooting
-            or not player:CanShoot()
+            or not canFire(player)
             or attackMode(player) ~= "bubble" then return end
         local direction = shootInput(player)
         if not direction then return end
@@ -583,7 +655,8 @@ function HolyChalice.Register(mod, itemId)
             STREAM_INTERVAL_AT_BASE_RATE * (player.MaxFireDelay + 1)
                 / BASE_FIRE_DELAY)
         data.HolyChaliceNextShotFrame = frame + interval
-        fireFamiliarStream(familiar, itemId, direction)
+        fireFamiliarStream(familiar, itemId, direction,
+            Multishot.Clusters(player, player:GetCollectibleRNG(itemId)))
     end
     mod:AddCallback(ModCallbacks.MC_FAMILIAR_UPDATE,
         updateMirroringFamiliar, FamiliarVariant.INCUBUS)
@@ -623,6 +696,9 @@ function HolyChalice.Register(mod, itemId)
                     tear:GetData()[TEAR_KEY].damageFactor = 0.15
                 end
                 configureBubble(tear)
+                if familiarMode == "monstro" then
+                    boostMiniMonstroBubble(tear, familiar)
+                end
                 return
             end
         end
@@ -712,6 +788,9 @@ function HolyChalice.Register(mod, itemId)
                 or mode == "monstro" then
                 markBubble(tear, itemId, player, true)
                 configureBubble(tear)
+                if mode == "monstro" then
+                    boostMiniMonstroBubble(tear, familiar)
+                end
             end
         end)
     mod:AddCallback(ModCallbacks.MC_POST_FAMILIAR_FIRE_BRIMSTONE,
@@ -730,6 +809,7 @@ function HolyChalice.Register(mod, itemId)
             local player = ownerOf(familiar, 0)
             if player and player:HasCollectible(itemId)
                 and attackMode(player) == "technology" then
+                if Proxy.IsMini(familiar) then return end
                 fireRadialBubbles(player, itemId, laser.Position,
                     laserAim(laser, player), 2, 22, 7, 0.55)
             end

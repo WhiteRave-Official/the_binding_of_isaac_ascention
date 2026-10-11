@@ -107,7 +107,7 @@ local function setNativeKnifeVisible(knife, visible)
 end
 
 local function active()
-    return native and native.abi == 1
+    return native and native.abi == 2
         and type(DynamicMinisaacContinued) ~= "table"
 end
 
@@ -378,7 +378,7 @@ function Router.IsProxy(entity)
 end
 
 function Router.Register(mod, holyChalice, holyChaliceId)
-    if not native or native.abi ~= 1 then
+    if not native or native.abi ~= 2 then
         Isaac.DebugString("[AscentionMiniIsaac] native module unavailable; manual combat remains active")
         return
     end
@@ -495,6 +495,8 @@ function Router.Register(mod, holyChalice, holyChaliceId)
         local kind = weapon and weapon:GetWeaponType()
         local target = attackTargetFor(mini, proxy)
         local aim = target and (target.Position - mini.Position) or nil
+        native.PrimeProxy(proxy, aim and aim.X or 0, aim and aim.Y or 0,
+            target ~= nil)
         if holyChalice.FireMiniStream(proxy, mini, aim, holyChaliceId) then
             return true
         end
@@ -522,8 +524,34 @@ function Router.Register(mod, holyChalice, holyChaliceId)
                 or mini.Player:HasCollectible(CHOCOLATE_MILK))
         if kind == WeaponType.WEAPON_SPIRIT_SWORD
             or kind == WeaponType.WEAPON_TEARS
+            or kind == WeaponType.WEAPON_FETUS
             or (kind == WeaponType.WEAPON_LASER and not chargedLaser) then
             mini:GetData().AscentionMiniIsaacAim = target.Position - mini.Position
+        end
+        if kind == WeaponType.WEAPON_FETUS then
+            local fired = native.TickProxy(proxy, aim.X, aim.Y, true)
+            local data = mini:GetData()
+            if fired then
+                data.AscentionMiniIsaacLastShotFrame = Game():GetFrameCount()
+                data.AscentionMiniIsaacLastShotVelocity = aim
+            end
+            local frame = Game():GetFrameCount()
+            local proxyData = proxy:GetData()
+            if frame % 45 == 0
+                and (proxyData.AscentionMiniIsaacFetusSamples or 0) < 8 then
+                proxyData.AscentionMiniIsaacFetusSamples =
+                    (proxyData.AscentionMiniIsaacFetusSamples or 0) + 1
+                local state = native.Diagnostics(proxy)
+                Isaac.DebugString("[AscentionMiniIsaac] fetus_proxy mini="
+                    .. tostring(mini.InitSeed)
+                    .. " charge=" .. tostring(weapon:GetCharge())
+                    .. " max=" .. tostring(weapon:GetMaxCharge())
+                    .. " fired=" .. tostring(weapon:GetNumFired())
+                    .. " releases=" .. tostring(state.releases)
+                    .. " native_fire=" .. tostring(state.fetus_fires)
+                    .. " projectiles=" .. tostring(state.projectiles))
+            end
+            return true
         end
         if kind == WeaponType.WEAPON_KNIFE then
             local mainEntity = weapon:GetMainEntity()
@@ -618,6 +646,7 @@ function Router.Register(mod, holyChalice, holyChaliceId)
             if fired then
                 data.AscentionMiniIsaacLastShotFrame = Game():GetFrameCount()
                 data.AscentionMiniIsaacLastShotVelocity = aim
+                holyChalice.OnMiniNativeFire(proxy, mini, aim, holyChaliceId)
                 if chargedTechnology or chargedChocolateLaser or chargedChocolate then
                     local samples = data.AscentionMiniIsaacChargedTechSamples or 0
                     if samples < 8 then
@@ -687,6 +716,9 @@ function Router.Register(mod, holyChalice, holyChaliceId)
         if weapon and weapon:GetWeaponType() == WeaponType.WEAPON_KNIFE then return end
         local fired, techXRelease, brimstoneReleasing =
             native.TickProxy(proxy, aim.X, aim.Y, target ~= nil)
+        if fired then
+            holyChalice.OnMiniNativeFire(proxy, mini, aim, holyChaliceId)
+        end
         mini:GetData().AscentionMiniIsaacBrimstoneReleasing =
             weapon and weapon:GetWeaponType() == WeaponType.WEAPON_BRIMSTONE
             and brimstoneReleasing or false

@@ -58,6 +58,7 @@ function Adapter.Register(mod)
     local laserDamageSamples = 0
     local laserHitSamples = { normal = 0, chocolate = 0 }
     local laserAimSamples = 0
+    local antiGravitySamples = 0
     local proxyBySeed = {}
     local function redirectTear(tear, proxy, stage)
         local data = tear:GetData()
@@ -68,7 +69,10 @@ function Adapter.Register(mod)
         local mini = owner and owner.Ref
         local aim = mini and mini:Exists() and mini:GetData().AscentionMiniIsaacAim
         if not aim or aim:LengthSquared() < 0.01 then return end
-        local velocity = tear.Velocity - player.Velocity * 1.2
+        local held = tear.WaitFrames > 0
+            and tear.ContinueVelocity:LengthSquared() > 0.01
+        local velocity = held and tear.ContinueVelocity
+            or tear.Velocity - player.Velocity * 1.2
         if velocity:LengthSquared() < 0.01 then return end
         local frame = Game():GetFrameCount()
         local proxyData = proxy:GetData()
@@ -79,12 +83,27 @@ function Adapter.Register(mod)
         end
         local source = proxyData.AscentionMiniIsaacTearSource
         local angle = aim:GetAngleDegrees() - source:GetAngleDegrees()
-        tear.Velocity = velocity:Rotated(angle)
+        local aimedVelocity = velocity:Rotated(angle)
+        if player:HasCollectible(CollectibleType.COLLECTIBLE_ANTI_GRAVITY) then
+            data.AscentionMiniIsaacAntiGravityVelocity = aimedVelocity
+        end
+        if held then
+            tear.ContinueVelocity = aimedVelocity
+        else
+            tear.Velocity = aimedVelocity
+        end
         tear.Position = proxy.Position + (tear.Position - proxy.Position):Rotated(angle)
         tear.Scale = tear.Scale * TEAR_SCALE
         data.AscentionMiniIsaacNativeAimed = true
         if mini and mini:Exists() then
             mini:GetData().AscentionMiniIsaacTearShotFrame = frame
+        end
+        if held and antiGravitySamples < 4 then
+            antiGravitySamples = antiGravitySamples + 1
+            Isaac.DebugString("[AscentionMiniIsaac] anti_gravity_aim seed="
+                .. tostring(tear.InitSeed) .. " proxy=" .. tostring(proxy.InitSeed)
+                .. " launch=" .. tostring(aimedVelocity.X) .. ","
+                .. tostring(aimedVelocity.Y))
         end
         if redirectedSamples < 6 then
             redirectedSamples = redirectedSamples + 1
@@ -118,6 +137,10 @@ function Adapter.Register(mod)
     end)
 
     mod:AddCallback(ModCallbacks.MC_PRE_TEAR_UPDATE, function(_, tear)
+        local launch = tear:GetData().AscentionMiniIsaacAntiGravityVelocity
+        if launch and tear.WaitFrames > 0 then
+            tear.ContinueVelocity = launch
+        end
         if tear.FrameCount > 1 then return end
         local proxy = directProxy(tear.SpawnerEntity)
         if proxy and not tear:GetData().AscentionMiniIsaacNativeAimed then

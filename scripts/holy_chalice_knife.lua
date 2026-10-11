@@ -42,6 +42,13 @@ function Knife.Register(mod, itemId, spawnBubble)
             rng:SetSeed((knife.InitSeed or 1) + serial * 101, 35)
             local count = math.floor(3 + 12 * math.min(1,
                 math.max(0, state.charge)) + 0.5)
+            if player:HasCollectible(CollectibleType.COLLECTIBLE_BRIMSTONE) then
+                local weapon = player:GetWeapon(1)
+                local main = weapon and weapon:GetMainEntity()
+                if main and main.InitSeed ~= knife.InitSeed then
+                    count = math.min(count, 2)
+                end
+            end
             for _ = 1, count do
                 local angle = (rng:RandomFloat() - 0.5)
                     * BURST_ANGLE_SPREAD

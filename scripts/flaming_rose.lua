@@ -13,6 +13,7 @@ local TEAR_VISUAL_SCALE = 0.5
 local BURN_DURATION = 90
 local BURN_DAMAGE_MULTIPLIER = 0.2
 local CONTINUOUS_HIT_COOLDOWN = 12
+local CHALICE_TEAR_KEY = "AscentionHolyChaliceBubble"
 
 local function ownerOf(entity, depth)
     if not entity or depth > 4 then return nil end
@@ -91,7 +92,35 @@ function FlamingRose.Register(mod, itemId)
     mod:AddCallback(ModCallbacks.MC_POST_TEAR_UPDATE, function(_, tear)
         if not tear:GetData()[TEAR_KEY] then return end
         if tear:GetData().AscentionOldGodEyeTear then return end
+        if tear:GetData()[CHALICE_TEAR_KEY] then return end
         updateTearVisual(tear)
+    end)
+
+    mod:AddCallback(ModCallbacks.MC_POST_TEAR_RENDER, function(_, tear)
+        local data = tear:GetData()
+        local bubble = data[CHALICE_TEAR_KEY]
+        if not data[TEAR_KEY] or not bubble or bubble.popped
+            or not tear.Visible then return end
+        local overlay = data.AscentionFlamingRoseBubbleOverlay
+        if not overlay then
+            overlay = Sprite()
+            overlay:Load(FIRE_TEAR_ANIMATION, true)
+            overlay.Color = Color(1, 1, 1, 0.6)
+            data.AscentionFlamingRoseBubbleOverlay = overlay
+        end
+        local velocity = tear.Velocity
+        local animation = math.abs(velocity.X) > math.abs(velocity.Y)
+            and "MoveHori" or "MoveVert"
+        if overlay:GetAnimation() ~= animation then
+            overlay:Play(animation, true)
+        end
+        overlay.FlipX = animation == "MoveHori" and velocity.X < 0
+        overlay.FlipY = animation == "MoveVert" and velocity.Y < 0
+        local scale = math.max(0.2, tear.Scale * TEAR_VISUAL_SCALE)
+        overlay.Scale = Vector(scale, scale)
+        overlay:Render(Isaac.WorldToRenderPosition(
+            tear.Position + Vector(0, tear.Height or 0)))
+        overlay:Update()
     end)
 
     for _, callback in ipairs({
