@@ -59,7 +59,13 @@ local function getEyeCount(player)
 end
 
 local function save(mod)
-    mod:SaveData(json.encode({ [SAVE_KEY] = state.kills }))
+    local saved = {}
+    if mod:HasData() then
+        local ok, decoded = pcall(json.decode, mod:LoadData())
+        if ok and type(decoded) == "table" then saved = decoded end
+    end
+    saved[SAVE_KEY] = state.kills
+    mod:SaveData(json.encode(saved))
 end
 
 local function load(mod, continued)

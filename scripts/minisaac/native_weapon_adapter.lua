@@ -3,6 +3,7 @@ local Adapter = {}
 local TARGET_DAMAGE = 0.15
 local INCUBUS_DAMAGE = 0.75
 local TEAR_SCALE = 0.6
+local FETUS_VISUAL_SCALE = 0.6
 local LASER_SCALE = 0.65
 local MONSTROS_LUNG = CollectibleType.COLLECTIBLE_MONSTROS_LUNG
 local TECHNOLOGY = CollectibleType.COLLECTIBLE_TECHNOLOGY
@@ -59,7 +60,26 @@ function Adapter.Register(mod)
     local laserHitSamples = { normal = 0, chocolate = 0 }
     local laserAimSamples = 0
     local antiGravitySamples = 0
+    local fetusVisualSamples = 0
     local proxyBySeed = {}
+    local function scaleFetusVisual(tear, proxy)
+        if not proxy or (tear.Variant ~= TearVariant.FETUS
+            and not tear:HasTearFlags(TearFlags.TEAR_FETUS)) then return end
+        local data = tear:GetData()
+        if data.AscentionMiniIsaacFetusVisualScaled then return end
+        data.AscentionMiniIsaacFetusVisualScaled = true
+        local before = tear.SpriteScale
+        tear.SpriteScale = before * FETUS_VISUAL_SCALE
+        if fetusVisualSamples < 6 then
+            fetusVisualSamples = fetusVisualSamples + 1
+            Isaac.DebugString("[AscentionMiniIsaac] fetus_visual seed="
+                .. tostring(tear.InitSeed) .. " scale=" .. tostring(tear.Scale)
+                .. " sprite_before=" .. tostring(before.X) .. "," .. tostring(before.Y)
+                .. " sprite_after=" .. tostring(tear.SpriteScale.X) .. ","
+                .. tostring(tear.SpriteScale.Y)
+                .. " damage=" .. tostring(tear.CollisionDamage))
+        end
+    end
     local function redirectTear(tear, proxy, stage)
         local data = tear:GetData()
         if data.AscentionMiniIsaacNativeAimed or data.AscentionMiniIsaacSplitChild then return end
@@ -155,6 +175,7 @@ function Adapter.Register(mod)
             proxy:GetData().AscentionMiniIsaacSpectralTears =
                 tear:HasTearFlags(TearFlags.TEAR_SPECTRAL)
         end
+        scaleFetusVisual(tear, proxy)
         local player = tear.Parent and tear.Parent:ToPlayer()
         if not proxy or not player then return end
         redirectTear(tear, proxy, "post_update")
@@ -190,6 +211,7 @@ function Adapter.Register(mod)
                 tear.Scale = tear.Scale * TEAR_SCALE
             end
         end
+        scaleFetusVisual(tear, proxy)
     end, FamiliarVariant.INCUBUS)
 
     local function scaleLaser(_, laser)

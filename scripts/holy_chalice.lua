@@ -7,6 +7,9 @@ local Splash = include("scripts.holy_chalice_splash")
 local Tammy = include("scripts.holy_chalice_tammy")
 local Flight = include("scripts.holy_chalice_flight")
 local Proxy = include("scripts.holy_chalice_proxy")
+local Neptunus = include("scripts.holy_chalice_neptunus")
+local Chocolate = include("scripts.holy_chalice_chocolate")
+local Scaling = include("scripts.holy_chalice_scaling")
 local IDLE_COSTUME = Isaac.GetCostumeIdByPath("gfx/characters/holy_chalice.anm2")
 local SHOOT_COSTUME = Isaac.GetCostumeIdByPath("gfx/characters/holy_chalice_shoot.anm2")
 
@@ -19,8 +22,6 @@ local BURST_RADIUS = 48
 local BURST_DAMAGE_MULTIPLIER = 0.33
 local TEARS_BONUS = 0.3
 local SHOT_SPEED_PENALTY = 0.15
-local STREAM_INTERVAL_AT_BASE_RATE = 4
-local BASE_FIRE_DELAY = 10
 local BUBBLE_ANGLE_SPREAD = 22
 local MONSTRO_MIN_DAMAGE = 0.65
 local MONSTRO_DAMAGE_SPREAD = 0.95
@@ -65,6 +66,9 @@ local function attackMode(player)
         return "bubble"
     end
     if player:HasCollectible(CollectibleType.COLLECTIBLE_MONSTROS_LUNG) then
+        if player:HasCollectible(CollectibleType.COLLECTIBLE_CHOCOLATE_MILK) then
+            return "chocolate_monstro"
+        end
         return "monstro"
     end
     if player:HasCollectible(CollectibleType.COLLECTIBLE_LUDOVICO_TECHNIQUE) then
@@ -93,8 +97,15 @@ local function attackMode(player)
     end
     if kind == WeaponType.WEAPON_TEARS
         or player:GetPlayerType() == PlayerType.PLAYER_LILITH then
+        if player:HasCollectible(CollectibleType.COLLECTIBLE_CHOCOLATE_MILK) then
+            return "chocolate"
+        end
         return "bubble"
     end
+end
+
+local function isChocolateMode(mode)
+    return mode == "chocolate" or mode == "chocolate_monstro"
 end
 
 local function canFire(player)
@@ -166,7 +177,7 @@ local function markBubble(tear, itemId, owner, forced)
         and mode ~= "technology_2" then return end
     data[TEAR_KEY] = {
         owner = EntityPtr(owner), itemId = itemId, popped = false, age = 0,
-        range = math.max(40, owner.TearRange), travel = 0,
+        range = math.max(40, Scaling.Range(owner)), travel = 0,
         lastPosition = tear.Position,
         angleSpread = BUBBLE_ANGLE_SPREAD,
     }
@@ -176,7 +187,9 @@ local function markBubble(tear, itemId, owner, forced)
     local bloodAnimation = owner:HasCollectible(
         CollectibleType.COLLECTIBLE_HAEMOLACRIA)
     data[TEAR_KEY].bloodAnimation = bloodAnimation
-    local sheet = (bloodAnimation or attackMode(owner) == "monstro")
+    local mode = attackMode(owner)
+    local sheet = (bloodAnimation or mode == "monstro"
+        or mode == "chocolate_monstro")
         and HAEMO_BUBBLE_SHEET or BUBBLE_SHEET
     data[TEAR_KEY].splashRed = sheet == HAEMO_BUBBLE_SHEET
     if bloodAnimation and owner:HasCollectible(
@@ -232,8 +245,38 @@ local function configureBubble(tear)
     tear.FallingAcceleration = 0
 end
 
+local function adoptChocolateTear(holder, tear, owner, itemId)
+    if tear:GetData()[TEAR_KEY]
+        or (tear.Parent and tear.Parent.ToTear
+            and tear.Parent:ToTear()) then return end
+    local familiar = holder ~= owner
+    local mini = familiar and Proxy.IsMini(holder)
+    local nativeMultiplier = familiar and 0.75 or 1
+    local chargeFactor, volley = Chocolate.BeginShot(holder, tear, owner,
+        Game():GetFrameCount(), nativeMultiplier)
+    if not chargeFactor then return end
+    if mini then Proxy.Adopt(tear, owner) end
+    markBubble(tear, itemId, owner, true)
+    local data = tear:GetData()[TEAR_KEY]
+    data.chocolateMain = true
+    data.chocolateVolley = volley
+    data.chocolateChargeFactor = chargeFactor
+    data.chocolateSourceDamageFactor = mini and 0.15
+        or familiar and 0.75 or 1
+    data.damageFactor = chargeFactor * data.chocolateSourceDamageFactor
+    data.angleSpread = 0
+    tear.Scale = math.min(2.3, math.max(mini and 0.3 or 0.45,
+        tear.Scale * (0.35 + 0.9 * chargeFactor)))
+    configureBubble(tear)
+    data.chocolateTrailEligible = Chocolate.CanLeaveTrail(
+        tear.CollisionDamage, owner.Damage,
+        data.chocolateSourceDamageFactor)
+    tear:ResetSpriteScale(true)
+    syncBubbleSize(tear)
+end
+
 local function fireBubble(player, itemId, position, velocity, scale,
-    damageMultiplier, spread, roll, plain)
+    damageMultiplier, spread, roll, plain, baseDamage)
     local playerData = player:GetData()
     playerData.HolyChaliceFiringCustom = true
     local tear
@@ -247,6 +290,15 @@ local function fireBubble(player, itemId, position, velocity, scale,
     end
     playerData.HolyChaliceFiringCustom = nil
     if not tear then return end
+    if baseDamage then
+        tear.CollisionDamage = baseDamage
+        tear.Scale = 1
+    end
+    if not plain and player:HasCollectible(
+        CollectibleType.COLLECTIBLE_LUDOVICO_TECHNIQUE)
+        and tear:HasTearFlags(TearFlags.TEAR_LUDOVICO) then
+        tear:ClearTearFlags(TearFlags.TEAR_LUDOVICO)
+    end
     markBubble(tear, itemId, player, true)
     local data = tear:GetData()[TEAR_KEY]
     data.angleSpread = spread or 0
@@ -293,13 +345,15 @@ local function fireCharged(player, mode, direction, itemId)
 end
 
 local function fireRadialBubbles(player, itemId, position, aim,
-    count, spread, speed, scale)
+    count, spread, speed, scale, nativeTears)
     local rng = player:GetCollectibleRNG(itemId)
     for _ = 1, count do
         local direction = aim:Rotated((rng:RandomFloat() - 0.5) * spread)
+        local roll = 1
+        if nativeTears then roll = nil end
         fireBubble(player, itemId, position,
             direction * ((speed + rng:RandomFloat() * 2) * player.ShotSpeed),
-            scale or 0.6, 1, 0, 1, true)
+            scale or 0.6, 1, 0, roll, not nativeTears)
     end
 end
 
@@ -481,9 +535,9 @@ function HolyChalice.FireMiniStream(proxy, mini, aim, itemId)
     local frame = Game():GetFrameCount()
     local data = proxy:GetData()
     if frame < (data.HolyChaliceNextShotFrame or frame) then return true end
-    local interval = math.max(1,
-        STREAM_INTERVAL_AT_BASE_RATE * (player.MaxFireDelay + 1)
-            / BASE_FIRE_DELAY)
+    local interval = Scaling.StreamInterval(player, itemId,
+        Multishot.CooldownProjectiles(player),
+        Multishot.CooldownMultiplier(player))
     data.HolyChaliceNextShotFrame = frame + interval
     local miniData = mini:GetData()
     miniData.AscentionMiniIsaacAim = aim
@@ -528,6 +582,7 @@ end
 
 function HolyChalice.Register(mod, itemId)
     local bloodLaserSamples = 0
+    Scaling.Register(mod, itemId)
     Synergies.Register(mod)
     Splash.Register(mod)
     Tammy.Register(mod, itemId)
@@ -535,7 +590,7 @@ function HolyChalice.Register(mod, itemId)
         local tear = fireBubble(player, itemId, position, velocity, 0.6, 1, 0)
         if tear then
             local data = tear:GetData()[TEAR_KEY]
-            data.range = math.max(180, player.TearRange * 1.4)
+            data.range = math.max(180, Scaling.Range(player) * 1.4)
             data.keepMomentum = true
         end
     end)
@@ -546,6 +601,8 @@ function HolyChalice.Register(mod, itemId)
             local tears = 30 / (player.MaxFireDelay + 1)
                 + TEARS_BONUS * count
             player.MaxFireDelay = 30 / math.max(0.1, tears) - 1
+        elseif cacheFlag == CacheFlag.CACHE_DAMAGE then
+            player.Damage = math.max(0, player.Damage - 1.5)
         elseif cacheFlag == CacheFlag.CACHE_SHOTSPEED then
             player.ShotSpeed = player.ShotSpeed - SHOT_SPEED_PENALTY * count
         end
@@ -563,6 +620,7 @@ function HolyChalice.Register(mod, itemId)
             end
             if AscentionNative and AscentionNative.FiringProxySeed
                 and AscentionNative.FiringProxySeed() ~= 0 then return end
+            if Neptunus.UsesNativeFire(player) then return end
             if hook == InputHook.GET_ACTION_VALUE then return 0 end
             if hook == InputHook.IS_ACTION_PRESSED
                 or hook == InputHook.IS_ACTION_TRIGGERED then return false end
@@ -582,11 +640,12 @@ function HolyChalice.Register(mod, itemId)
             return
         end
         local direction = shootInput(player)
-        setCostume(player, mode == "bubble"
+        setCostume(player, (mode == "bubble" or mode == "chocolate")
             and (direction and SHOOT_COSTUME or IDLE_COSTUME) or nil)
         local data = player:GetData()
         data.HolyChaliceWasHolding = direction ~= nil
         if direction then player:SetHeadDirection(headDirection(direction), 2, true) end
+        if isChocolateMode(mode) then return end
         if mode ~= "bubble" then
             local weapon = player:GetWeapon(1)
             if not weapon then return end
@@ -622,13 +681,15 @@ function HolyChalice.Register(mod, itemId)
         end
         data.HolyChaliceNativeMode = nil
         data.HolyChaliceNativeShotCount = nil
-        if not direction or player:GetPlayerType() == PlayerType.PLAYER_LILITH then return end
+        if player:GetPlayerType() == PlayerType.PLAYER_LILITH then return end
+        if Neptunus.UsesNativeFire(player) then return end
         local frame = Game():GetFrameCount()
+        local interval = Scaling.StreamInterval(player, itemId,
+            Multishot.CooldownProjectiles(player),
+            Multishot.CooldownMultiplier(player))
+        if not direction then return end
         local nextShot = data.HolyChaliceNextShotFrame or frame
         if frame < nextShot then return end
-        local interval = math.max(1,
-            STREAM_INTERVAL_AT_BASE_RATE * (player.MaxFireDelay + 1)
-                / BASE_FIRE_DELAY)
         data.HolyChaliceNextShotFrame = math.max(frame, nextShot) + interval
         fireStream(player, itemId, direction)
     end)
@@ -643,17 +704,18 @@ function HolyChalice.Register(mod, itemId)
             or player:GetData().GoldenEyeBlockedShooting
             or not canFire(player)
             or attackMode(player) ~= "bubble" then return end
+        if Neptunus.UsesNativeFire(player) then return end
         local direction = shootInput(player)
-        if not direction then return end
         local frame = Game():GetFrameCount()
         local data = familiar:GetData()
+        local interval = Scaling.StreamInterval(player, itemId,
+            Multishot.CooldownProjectiles(player),
+            Multishot.CooldownMultiplier(player))
+        if not direction then return end
         local facing = headDirection(direction)
         familiar.ShootDirection = facing
         familiar.LastDirection = facing
         if frame < (data.HolyChaliceNextShotFrame or frame) then return end
-        local interval = math.max(1,
-            STREAM_INTERVAL_AT_BASE_RATE * (player.MaxFireDelay + 1)
-                / BASE_FIRE_DELAY)
         data.HolyChaliceNextShotFrame = frame + interval
         fireFamiliarStream(familiar, itemId, direction,
             Multishot.Clusters(player, player:GetCollectibleRNG(itemId)))
@@ -688,6 +750,26 @@ function HolyChalice.Register(mod, itemId)
         local familiarOwner = familiar and ownerOf(familiar, 0)
         if familiarOwner and familiarOwner:HasCollectible(itemId) then
             local familiarMode = attackMode(familiarOwner)
+            if isChocolateMode(familiarMode) then
+                if not familiarOwner:GetData().HolyChaliceFiringCustom then
+                    adoptChocolateTear(familiar, tear, familiarOwner, itemId)
+                end
+                return
+            end
+            if familiarMode == "bubble"
+                and Neptunus.UsesNativeFire(familiarOwner)
+                and not Proxy.IsMini(familiar)
+                and not familiarOwner:GetData().HolyChaliceFiringCustom then
+                local aim = shootInput(familiarOwner)
+                    or tear.Velocity:Normalized()
+                if Neptunus.ReplaceNativeTear(familiar, tear,
+                    Game():GetFrameCount()) then
+                    fireFamiliarStream(familiar, itemId, aim,
+                        Multishot.Clusters(familiarOwner,
+                            familiarOwner:GetCollectibleRNG(itemId)))
+                end
+                return
+            end
             if familiarMode == "bubble" or familiarMode == "technology_2"
                 or familiarMode == "monstro" then
                 local proxyShot = Proxy.Adopt(tear, familiarOwner)
@@ -706,6 +788,10 @@ function HolyChalice.Register(mod, itemId)
         if player and player:GetData().HolyChaliceFiringCustom then return end
         if player and player:HasCollectible(itemId) then
             local mode = attackMode(player)
+            if isChocolateMode(mode) then
+                adoptChocolateTear(player, tear, player, itemId)
+                return
+            end
             if mode == "bubble" then
                 if Proxy.Adopt(tear, player) then
                     markBubble(tear, itemId, player, true)
@@ -718,6 +804,15 @@ function HolyChalice.Register(mod, itemId)
                     local data = tear:GetData()[TEAR_KEY]
                     data.angleSpread = 0
                     configureBubble(tear)
+                    return
+                end
+                if Neptunus.UsesNativeFire(player) then
+                    local aim = shootInput(player)
+                        or tear.Velocity:Normalized()
+                    if Neptunus.ReplaceNativeTear(player, tear,
+                        Game():GetFrameCount()) then
+                        fireStream(player, itemId, aim)
+                    end
                     return
                 end
                 tear.Visible = false
@@ -781,7 +876,15 @@ function HolyChalice.Register(mod, itemId)
             local familiar = tear.SpawnerEntity or tear.Parent
             local player = ownerOf(familiar, 0)
             if not player or not player:HasCollectible(itemId) then return end
+            if tear:GetData().HolyChaliceNeptunusReplaced
+                or player:GetData().HolyChaliceFiringCustom then return end
             local mode = attackMode(player)
+            if isChocolateMode(mode) then
+                adoptChocolateTear(familiar, tear, player, itemId)
+                return
+            end
+            if mode == "bubble" and Neptunus.UsesNativeFire(player)
+                and not Proxy.IsMini(familiar) then return end
             if mode == "c_section" then
                 supplementFetus(player, tear, itemId)
             elseif mode == "bubble" or mode == "technology_2"
@@ -892,7 +995,7 @@ function HolyChalice.Register(mod, itemId)
                         local rng = player:GetCollectibleRNG(itemId)
                         fireRadialBubbles(player, itemId, tear.Position,
                             Vector.FromAngle(rng:RandomInt(360)),
-                            2 + rng:RandomInt(3), 360, 6, 0.55)
+                            2 + rng:RandomInt(3), 360, 6, 0.55, true)
                         tearData.HolyChaliceLudoNext = frame + 20
                     end
                 end
@@ -913,7 +1016,12 @@ function HolyChalice.Register(mod, itemId)
         if data.antiGravityHeld and owner and not shootInput(owner) then
             Flight.ReleaseAntiGravity(data, tear)
         end
-        if Flight.Update(tear, data, owner) then popBubble(tear, data) end
+        if Flight.Update(tear, data, owner) then
+            popBubble(tear, data)
+        elseif owner and owner:Exists() then
+            Chocolate.SpawnTrail(tear, data, owner, itemId,
+                TEAR_KEY, fireBubble)
+        end
     end)
 
     mod:AddCallback(ModCallbacks.MC_PRE_TEAR_RENDER, function(_, tear)

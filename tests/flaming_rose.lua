@@ -11,6 +11,7 @@ DamageFlag = { DAMAGE_POISON_BURN = 2 }
 EntityType = { ENTITY_NPC = 5, ENTITY_EFFECT = 1000 }
 EntityFlag = { FLAG_FRIENDLY = 1 }
 EffectVariant = { RED_CANDLE_FLAME = 52 }
+FamiliarVariant = { MINISAAC = 268 }
 EntityPtr = function(entity) return { Ref = entity } end
 EntityRef = function(entity) return { Entity = entity } end
 Color = function(_, _, _, alpha) return { A = alpha } end
@@ -54,7 +55,8 @@ Isaac = {
     WorldToRenderPosition = function(position) return position end,
     Spawn = function(_, variant, _, position, velocity, owner)
         assert(variant == EffectVariant.RED_CANDLE_FLAME)
-        local effect = { Position = position, Velocity = velocity, SpawnerEntity = owner, data = {} }
+        local effect = { Position = position, Velocity = velocity, SpawnerEntity = owner,
+            SpriteScale = Vector(1, 1), data = {} }
         function effect:ToEffect() return self end
         function effect:GetData() return self.data end
         flames[#flames + 1] = effect
@@ -185,5 +187,33 @@ local bomb = weapon("bomb", 303)
 callbacks[ModCallbacks.MC_POST_FIRE_BOMB](nil, bomb)
 onDamage(nil, npc, 5, 0, { Entity = bomb }, 0, nil)
 assert(#flames == 5 and flames[5].CollisionDamage == 10)
+
+local proxy = { Player = owner, data = { AscentionMiniIsaacWeaponProxy = true } }
+function proxy:GetData() return self.data end
+function proxy:ToPlayer() return nil end
+function proxy:ToFamiliar() return self end
+local miniSprite = { filename = "gfx/002.000_tear.anm2", animation = "" }
+for _, method in ipairs({ "GetFilename", "Load", "GetAnimation", "Play" }) do
+    miniSprite[method] = sprite[method]
+end
+local miniTear = {
+    InitSeed = 400, CollisionDamage = 0.6, SpawnerEntity = proxy,
+    Position = Vector(0, 0), Scale = 0.6, Height = -20, Visible = true,
+    Velocity = Vector.FromAngle(0), data = {},
+}
+function miniTear:GetData() return self.data end
+function miniTear:GetSprite() return miniSprite end
+function miniTear:ToTear() return self end
+function miniTear:ToLaser() return nil end
+function miniTear:ToKnife() return nil end
+function miniTear:ToBomb() return nil end
+callbacks[ModCallbacks.MC_POST_TEAR_INIT](nil, miniTear)
+callbacks[ModCallbacks.MC_POST_TEAR_UPDATE](nil, miniTear)
+assert(miniSprite.Scale.X == 0.3 and miniSprite.Scale.Y == 0.3,
+    "mini-Isaac's Rose tear must retain its smaller sprite")
+onDamage(nil, npc, 0.6, 0, { Entity = miniTear }, 0, nil)
+assert(flames[6].SpriteScale.X == 0.6 and flames[6].SpriteScale.Y == 0.6,
+    "mini-Isaac's Rose flame must be smaller")
+assert(flames[6].CollisionDamage == 1.2)
 
 print("flaming_rose: OK")

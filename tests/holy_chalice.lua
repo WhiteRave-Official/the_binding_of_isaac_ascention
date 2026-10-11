@@ -6,7 +6,8 @@ ModCallbacks = setmetatable({}, {
         return nextCallbackId
     end,
 })
-CacheFlag = { CACHE_FIREDELAY = 1, CACHE_SHOTSPEED = 2 }
+CacheFlag = { CACHE_FIREDELAY = 1, CACHE_SHOTSPEED = 2,
+    CACHE_DAMAGE = 4 }
 EntityType = { ENTITY_NPC = 1, ENTITY_EFFECT = 2, ENTITY_TEAR = 5,
     ENTITY_FIREPLACE = 33,
     ENTITY_BOMB = 4 }
@@ -29,8 +30,10 @@ CollectibleType = { COLLECTIBLE_BRIMSTONE = 101, COLLECTIBLE_TECH_X = 102,
     COLLECTIBLE_LUDOVICO_TECHNIQUE = 115,
     COLLECTIBLE_INCUBUS = 116, COLLECTIBLE_TWISTED_PAIR = 117,
     COLLECTIBLE_TAMMYS_HEAD = 118, COLLECTIBLE_MY_REFLECTION = 119,
-    COLLECTIBLE_ANTI_GRAVITY = 120 }
+    COLLECTIBLE_ANTI_GRAVITY = 120, COLLECTIBLE_NEPTUNUS = 121,
+    COLLECTIBLE_CHOCOLATE_MILK = 122 }
 PlayerType = { PLAYER_LILITH = 10 }
+PlayerForm = { PLAYERFORM_BABY = 1 }
 TrinketType = { TRINKET_RING_WORM = 11, TRINKET_BRAIN_WORM = 144 }
 EffectVariant.BRIMSTONE_BALL = 113
 ButtonAction = { ACTION_SHOOTLEFT = 1, ACTION_SHOOTRIGHT = 2,
@@ -85,7 +88,10 @@ RNG = function()
     return { SetSeed = function() end, RandomFloat = function() return rngValue end }
 end
 local frame = 0
-Game = function() return { GetFrameCount = function() return frame end } end
+Game = function() return {
+    GetFrameCount = function() return frame end,
+    GetNumPlayers = function() return 1 end,
+} end
 local splashSprites = {}
 Sprite = function()
     local sprite = {
@@ -132,6 +138,7 @@ local player = {
     TearRange = 120,
     count = 1,
     items = {},
+    forms = {},
     trinkets = {},
     nativeShots = 0,
     nativeCharge = 0,
@@ -178,6 +185,7 @@ local player = {
         local value = self.items[id]
         return value == true or type(value) == "number" and value > 0
     end,
+    HasPlayerForm = function(self, id) return self.forms[id] or false end,
     HasTrinket = function(self, id) return self.trinkets[id] or false end,
     GetCollectibleNum = function(self, id)
         if id == 9 then return self.count end
@@ -201,6 +209,7 @@ end
 local tearSprite
 Isaac = {
     WorldToRenderPosition = function(position) return position end,
+    WorldToScreen = function(position) return position end,
     GetEntityVariantByName = function() return 9200 end,
     GetCostumeIdByPath = function(path)
         return path:find("_shoot", 1, true) and 91 or 90
@@ -264,12 +273,25 @@ include = function(path)
     end
     return included[path]
 end
+Isaac.GetPlayer = function() return player end
 local chalice = dofile("scripts/holy_chalice.lua")
 chalice.Register(mod, 9)
+player.count = 0
+callbacks[ModCallbacks.MC_POST_GAME_STARTED](mod, false)
+player.count = 1
 callbacks[ModCallbacks.MC_EVALUATE_CACHE](mod, player, CacheFlag.CACHE_FIREDELAY)
 assert(math.abs(30 / (player.MaxFireDelay + 1) - 3.3) < 0.0001)
 callbacks[ModCallbacks.MC_EVALUATE_CACHE](mod, player, CacheFlag.CACHE_SHOTSPEED)
 assert(math.abs(player.ShotSpeed - 0.85) < 0.0001)
+callbacks[ModCallbacks.MC_EVALUATE_CACHE](mod, player, CacheFlag.CACHE_DAMAGE)
+assert(math.abs(player.Damage - 10.5) < 0.0001)
+player.Damage = 12
+player.count = 2
+callbacks[ModCallbacks.MC_EVALUATE_CACHE](mod, player, CacheFlag.CACHE_DAMAGE)
+assert(math.abs(player.Damage - 10.5) < 0.0001,
+    "additional Chalice copies must not stack the damage penalty")
+player.Damage = 12
+player.count = 1
 player.items[CollectibleType.COLLECTIBLE_MOMS_KNIFE] = true
 player.MaxFireDelay = 9
 callbacks[ModCallbacks.MC_EVALUATE_CACHE](mod, player, CacheFlag.CACHE_FIREDELAY)
@@ -431,17 +453,25 @@ local function probeBubble(multiplierSeed)
     return probe
 end
 local weak = probeBubble(0)
-assert(math.abs(weak.CollisionDamage - 2.4) < 0.0001)
-assert(math.abs(weak.Scale - 0.55) < 0.0001)
+assert(math.abs(weak.CollisionDamage - 4.8) < 0.0001)
+assert(math.abs(weak.Scale - math.sqrt(0.4)) < 0.0001)
 local strong = probeBubble(1)
-assert(math.abs(strong.CollisionDamage - 19.2) < 0.0001)
-assert(math.abs(strong.Scale - math.sqrt(1.6)) < 0.0001)
+assert(math.abs(strong.CollisionDamage - 16.8) < 0.0001)
+assert(math.abs(strong.Scale - math.sqrt(1.4)) < 0.0001)
 rngValue = 0.5
 
 player.FireTear = function(self, position, velocity)
     local shot = {
         InitSeed = 345 + #shots, CollisionDamage = self.Damage, Scale = 1,
         Velocity = velocity, Position = position, SpawnerEntity = self,
+        nativeStatus = self.testNativeStatus,
+        ludoFlag = self.testLudoFlag,
+        HasTearFlags = function(self, flag)
+            return flag == TearFlags.TEAR_LUDOVICO and self.ludoFlag or false
+        end,
+        ClearTearFlags = function(self, flag)
+            if flag == TearFlags.TEAR_LUDOVICO then self.ludoFlag = false end
+        end,
         GetData = function(self) self.data = self.data or {}; return self.data end,
         GetSprite = function() return tearSprite end,
         ResetSpriteScale = function(self, force)
@@ -494,7 +524,9 @@ for tick = 36, 43 do
     frame = tick
     callbacks[ModCallbacks.MC_POST_PLAYER_UPDATE](mod, player)
 end
-assert(#shots == 14, "faster fire rate must speed up the bubble stream")
+assert(#shots > 6 and #shots < 14,
+    "faster fire rate must speed up the stream with reduced scaling")
+local streamShotCount = #shots
 local timed = shots[1]
 assert(math.abs(timed.CollisionDamage - 10.8) < 0.0001)
 local flightHeight = timed.Height
@@ -601,7 +633,8 @@ player.items[CollectibleType.COLLECTIBLE_BRIMSTONE] = true
 player.weaponKind = WeaponType.WEAPON_LASER
 charged("brim_techx", 100)
 assert(player.costume == nil)
-assert(#shots == 14, "charged laser synergies must not add stream bubbles")
+assert(#shots == streamShotCount,
+    "charged laser synergies must not add stream bubbles")
 local comboRing = { SpawnerEntity = player }
 callbacks[ModCallbacks.MC_POST_FIRE_TECH_X_LASER](mod, comboRing)
 assert(not comboRing.removed and adopted[4].laser == comboRing
@@ -700,9 +733,13 @@ player.items[CollectibleType.COLLECTIBLE_HAEMOLACRIA] = nil
 local function stream(item, copies, expected, start)
     player.items[item] = copies
     holdingAttack = true
+    player:GetData().HolyChaliceNextShotFrame = nil
     local before = #shots
     update(start)
     assert(#shots - before == expected)
+    update(start + 1)
+    assert(#shots - before == expected,
+        "multishot stream must honor its extended interval")
     player.items[item] = nil
 end
 stream(CollectibleType.COLLECTIBLE_INNER_EYE, 1, 3, 130)
@@ -710,6 +747,27 @@ stream(CollectibleType.COLLECTIBLE_MUTANT_SPIDER, 1, 8, 140)
 stream(CollectibleType.COLLECTIBLE_20_20, 1, 2, 150)
 stream(CollectibleType.COLLECTIBLE_THE_WIZ, 1, 2, 160)
 assert(shots[#shots - 1].Velocity.Y < 0 and shots[#shots].Velocity.Y > 0)
+player.forms[PlayerForm.PLAYERFORM_BABY] = true
+player:GetData().HolyChaliceNextShotFrame = nil
+local beforeConjoined = #shots
+update(165)
+assert(#shots == beforeConjoined + 6,
+    "Conjoined must split three two-bubble streams")
+player.items[CollectibleType.COLLECTIBLE_THE_WIZ] = true
+player:GetData().HolyChaliceNextShotFrame = nil
+beforeConjoined = #shots
+update(166)
+assert(#shots == beforeConjoined + 12,
+    "Conjoined and Wiz must combine into six two-bubble lanes")
+player.items[CollectibleType.COLLECTIBLE_THE_WIZ] = nil
+player.items[CollectibleType.COLLECTIBLE_20_20] = true
+player:GetData().HolyChaliceNextShotFrame = nil
+beforeConjoined = #shots
+update(167)
+assert(#shots == beforeConjoined + 12,
+    "Conjoined and 20/20 must stack their stream volume")
+player.items[CollectibleType.COLLECTIBLE_20_20] = nil
+player.forms[PlayerForm.PLAYERFORM_BABY] = nil
 stream(CollectibleType.COLLECTIBLE_INNER_EYE, 2, 5, 170)
 stream(CollectibleType.COLLECTIBLE_MUTANT_SPIDER, 2, 14, 180)
 local originalRng = player.GetCollectibleRNG
@@ -726,6 +784,7 @@ player.GetCollectibleRNG = function()
 end
 player.items[CollectibleType.COLLECTIBLE_INNER_EYE] = true
 local clustered = #shots
+player:GetData().HolyChaliceNextShotFrame = nil
 update(185)
 assert(#shots == clustered + 9, "Inner Eye needs three RNG clusters")
 assert(shots[clustered + 1].Position.Y ~= shots[clustered + 2].Position.Y,
@@ -891,6 +950,8 @@ callbacks[ModCallbacks.MC_POST_LASER_UPDATE](mod, techLaser)
 assert(#shots == before + 2)
 player.items[CollectibleType.COLLECTIBLE_TECHNOLOGY_2] = nil
 player.items[CollectibleType.COLLECTIBLE_LUDOVICO_TECHNIQUE] = true
+player.testNativeStatus = "poison"
+player.testLudoFlag = true
 local ludo = { SpawnerEntity = player, Position = vector(20, 0),
     Velocity = vector(0, 0),
     HasTearFlags = function(_, flag)
@@ -906,6 +967,13 @@ frame = 428
 callbacks[ModCallbacks.MC_POST_TEAR_UPDATE](mod, ludo)
 assert(#shots == before + 2,
     "Ludovico's native tear must periodically release radial bubbles")
+assert(shots[#shots].nativeStatus == "poison"
+    and shots[#shots]:GetData().AscentionHolyChaliceBubble,
+    "Ludovico's bubbles must inherit native tear effects")
+assert(not shots[#shots].ludoFlag,
+    "Ludovico's released bubbles must not become controlled tears")
+player.testNativeStatus = nil
+player.testLudoFlag = nil
 player.items[CollectibleType.COLLECTIBLE_LUDOVICO_TECHNIQUE] = nil
 local familiar = { Player = player,
     ToPlayer = function() return nil end,
@@ -1284,4 +1352,202 @@ assert(wrappedMonstro:GetData().AscentionHolyChaliceBubble
     and wrappedMonstro:GetData().HolyChaliceMiniMonstroBoosted,
     "raw Entity source must be converted to Familiar before boost")
 player.items[CollectibleType.COLLECTIBLE_MONSTROS_LUNG] = nil
+player.items[CollectibleType.COLLECTIBLE_TECH_X] = nil
+player.items[CollectibleType.COLLECTIBLE_NEPTUNUS] = true
+player.MaxFireDelay = 9
+player:GetData().HolyChaliceNextShotFrame = nil
+holdingAttack = false
+local beforeNeptunus = #shots
+for tick = 3100, 3189 do update(tick) end
+assert(#shots == beforeNeptunus,
+    "Neptunus must not generate a separate timed stream while idle")
+holdingAttack = true
+update(3190)
+assert(#shots == beforeNeptunus,
+    "Neptunus must wait for the engine's charged shots")
+assert(callbacks[ModCallbacks.MC_INPUT_ACTION](mod, player,
+    InputHook.IS_ACTION_PRESSED, ButtonAction.ACTION_SHOOTRIGHT) == nil,
+    "the engine must receive shoot input to discharge Neptunus")
+local function nativeNeptunusTear()
+    return {
+        Position = player.Position, Velocity = vector(10, 0),
+        SpawnerEntity = player, Visible = true,
+        GetData = function(self) self.data = self.data or {}; return self.data end,
+        Remove = function(self) self.removed = true end,
+    }
+end
+local firstNative = nativeNeptunusTear()
+callbacks[ModCallbacks.MC_POST_FIRE_TEAR](mod, firstNative)
+assert(firstNative.removed and not firstNative.Visible)
+assert(#shots > beforeNeptunus)
+local afterVolley = #shots
+callbacks[ModCallbacks.MC_POST_FIRE_TEAR](mod, nativeNeptunusTear())
+assert(#shots == afterVolley,
+    "one native multishot volley must produce one custom stream")
+update(3191)
+callbacks[ModCallbacks.MC_POST_FIRE_TEAR](mod, nativeNeptunusTear())
+assert(#shots > afterVolley,
+    "each subsequent native Neptunus shot must generate a stream")
+local neptunusFamiliar = {
+    Player = player, Position = vector(20, 0),
+    ToFamiliar = function(self) return self end,
+    ToPlayer = function() return nil end,
+    GetData = function(self) self.data = self.data or {}; return self.data end,
+    FireProjectile = function(self, aim)
+        local shot = player:FireTear(self.Position, aim * 10)
+        shot.SpawnerEntity = self
+        shot.Parent = self
+        return shot
+    end,
+    PlayShootAnim = function() end,
+}
+local nativeFamiliarShot = nativeNeptunusTear()
+nativeFamiliarShot.SpawnerEntity = neptunusFamiliar
+nativeFamiliarShot.Parent = neptunusFamiliar
+update(3192)
+local beforeFamiliar = #shots
+callbacks[ModCallbacks.MC_POST_FIRE_TEAR](mod, nativeFamiliarShot)
+assert(nativeFamiliarShot.removed and not nativeFamiliarShot.Visible
+    and #shots > beforeFamiliar,
+    "native familiar Neptunus volley must become one Chalice stream")
+player.items[CollectibleType.COLLECTIBLE_NEPTUNUS] = nil
+player.items[CollectibleType.COLLECTIBLE_CHOCOLATE_MILK] = true
+frame = 3200
+local beforeChocolate = #shots
+update(frame)
+assert(#shots == beforeChocolate,
+    "Chocolate Milk must wait for the native charged release")
+assert(callbacks[ModCallbacks.MC_INPUT_ACTION](mod, player,
+    InputHook.IS_ACTION_PRESSED, ButtonAction.ACTION_SHOOTRIGHT) == nil,
+    "Chocolate Milk must receive native charge input")
+local charged = player:FireTear(player.Position, vector(10, 0))
+charged.CollisionDamage = player.Damage * 1.5
+callbacks[ModCallbacks.MC_POST_FIRE_TEAR](mod, charged)
+local chargedData = charged:GetData().AscentionHolyChaliceBubble
+assert(chargedData and chargedData.chocolateMain
+    and chargedData.chocolateTrailEligible
+    and math.abs(chargedData.chocolateChargeFactor - 1.5) < 0.001
+    and charged.Scale >= 1.5
+    and charged.CollisionDamage > player.Damage,
+    "charged tear must become one large bubble with native charge damage")
+callbacks[ModCallbacks.MC_POST_FIRE_TEAR](mod, charged)
+assert(charged:GetData().AscentionHolyChaliceBubble == chargedData,
+    "the same native Chocolate Milk tear must not be adopted twice")
+local beforeTrail = #shots
+for tick = 3201, 3210 do
+    frame = tick
+    charged.Position = charged.Position + charged.Velocity
+    callbacks[ModCallbacks.MC_POST_TEAR_UPDATE](mod, charged)
+end
+assert(#shots == beforeTrail + 2,
+    "large Chocolate Milk bubble must leave small bubbles while moving")
+local chargedTrail = shots[#shots]
+assert(chargedTrail.CollisionDamage < charged.CollisionDamage
+    and chargedTrail.Scale < charged.Scale
+    and not chargedTrail:GetData().AscentionHolyChaliceBubble.chocolateMain,
+    "trail bubbles must be smaller, weaker and non-recursive")
+frame = 3220
+local quick = player:FireTear(player.Position, vector(10, 0))
+quick.CollisionDamage = player.Damage * 0.5
+callbacks[ModCallbacks.MC_POST_FIRE_TEAR](mod, quick)
+assert(quick.CollisionDamage < charged.CollisionDamage
+    and quick.Scale < charged.Scale and quick.Scale < 1
+    and quick:GetData().AscentionHolyChaliceBubble.chocolateChargeFactor == 0.5,
+    "longer Chocolate Milk charge must increase bubble damage and size")
+assert(not quick:GetData().AscentionHolyChaliceBubble.chocolateTrailEligible,
+    "weak Chocolate Milk bubbles must not leave a trail")
+local beforeWeakTrail = #shots
+for tick = 3221, 3230 do
+    frame = tick
+    quick.Position = quick.Position + quick.Velocity
+    callbacks[ModCallbacks.MC_POST_TEAR_UPDATE](mod, quick)
+end
+assert(#shots == beforeWeakTrail,
+    "weak Chocolate Milk bubbles must not spawn trail projectiles")
+
+local function checkChocolateVolley(item, count, testFrame)
+    player.items[item] = true
+    frame = testFrame
+    local volley
+    for index = 1, count do
+        local nativeDirection = vector(10, (index - 1) * 2)
+        local shot = player:FireTear(player.Position, nativeDirection)
+        shot.CollisionDamage = player.Damage * 1.5
+        callbacks[ModCallbacks.MC_POST_FIRE_TEAR](mod, shot)
+        local data = shot:GetData().AscentionHolyChaliceBubble
+        assert(not shot.removed and data and data.chocolateMain,
+            "every native Chocolate Milk multishot tear must remain a bubble")
+        assert(data.chocolateVolley and (not volley
+            or data.chocolateVolley == volley),
+            "native multishot tears must share a trail budget")
+        assert(shot.Velocity.Y == nativeDirection.Y,
+            "Chocolate Milk multishot must retain its native spread")
+        volley = data.chocolateVolley
+    end
+    player.items[item] = nil
+end
+checkChocolateVolley(CollectibleType.COLLECTIBLE_20_20, 2, 3240)
+checkChocolateVolley(CollectibleType.COLLECTIBLE_INNER_EYE, 3, 3250)
+checkChocolateVolley(CollectibleType.COLLECTIBLE_MUTANT_SPIDER, 4, 3260)
+
+player.items[CollectibleType.COLLECTIBLE_MONSTROS_LUNG] = true
+frame = 3270
+local beforeMonstroChocolate = #shots
+update(frame)
+assert(#shots == beforeMonstroChocolate,
+    "Chocolate Milk + Monstro's Lung must use the native charged volley")
+local monstroVolley
+for index = 1, 5 do
+    local shot = player:FireTear(player.Position, vector(10, index - 3))
+    shot.CollisionDamage = player.Damage * 1.3
+    callbacks[ModCallbacks.MC_POST_FIRE_TEAR](mod, shot)
+    local data = shot:GetData().AscentionHolyChaliceBubble
+    assert(not shot.removed and data and data.chocolateMain
+        and data.splashRed and data.chocolateTrailEligible,
+        "native Monstro's Lung volley must become charged red bubbles")
+    assert(data.chocolateVolley and (not monstroVolley
+        or data.chocolateVolley == monstroVolley),
+        "Monstro's Lung bubbles must share a trail budget")
+    monstroVolley = data.chocolateVolley
+end
+player.items[CollectibleType.COLLECTIBLE_20_20] = true
+frame = 3271
+local combinedVolley
+for index = 1, 10 do
+    local shot = player:FireTear(player.Position, vector(10, index - 5))
+    shot.CollisionDamage = player.Damage * 1.2
+    callbacks[ModCallbacks.MC_POST_FIRE_TEAR](mod, shot)
+    local data = shot:GetData().AscentionHolyChaliceBubble
+    assert(not shot.removed and data and data.chocolateMain,
+        "Monstro's Lung + Multishot must preserve every native charged tear")
+    assert(data.chocolateVolley and (not combinedVolley
+        or data.chocolateVolley == combinedVolley),
+        "combined Monstro's Lung + Multishot needs one trail budget")
+    combinedVolley = data.chocolateVolley
+end
+player.items[CollectibleType.COLLECTIBLE_20_20] = nil
+player.items[CollectibleType.COLLECTIBLE_MONSTROS_LUNG] = nil
+
+local chocolate = included["scripts.holy_chalice_chocolate"]
+local trailVolley = { trails = 0 }
+local trailSpawns = 0
+for main = 1, 3 do
+    local shot = { Position = vector(100, 100), Velocity = vector(10, 0) }
+    local data = { age = 0, chocolateTrailEligible = true,
+        chocolateChargeFactor = 1.5, chocolateSourceDamageFactor = 1,
+        chocolateVolley = trailVolley }
+    for tick = 1, 60 do
+        data.age = tick
+        chocolate.SpawnTrail(shot, data, player, 9,
+            "AscentionHolyChaliceBubble", function()
+                trailSpawns = trailSpawns + 1
+                return { GetData = function()
+                    return { AscentionHolyChaliceBubble = { range = 200 } }
+                end }
+            end)
+    end
+end
+assert(trailSpawns == 24 and trailVolley.trails == 24,
+    "a charged multishot volley must cap its combined bubble trail")
+player.items[CollectibleType.COLLECTIBLE_CHOCOLATE_MILK] = nil
 print("holy chalice: OK")

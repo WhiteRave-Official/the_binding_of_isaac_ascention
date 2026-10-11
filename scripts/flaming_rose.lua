@@ -10,10 +10,25 @@ local FLAME_SPEED = 9
 local FLAME_LIFETIME = 210
 local FLAME_DRAG = 0.85
 local TEAR_VISUAL_SCALE = 0.5
+local MINI_VISUAL_SCALE = 0.6
 local BURN_DURATION = 90
 local BURN_DAMAGE_MULTIPLIER = 0.2
 local CONTINUOUS_HIT_COOLDOWN = 12
 local CHALICE_TEAR_KEY = "AscentionHolyChaliceBubble"
+
+local function miniSource(entity, depth)
+    if not entity or depth > 4 then return false end
+    local data = entity.GetData and entity:GetData()
+    if data and data.AscentionMiniIsaacOwner then return true end
+    local familiar = entity.ToFamiliar and entity:ToFamiliar()
+    if familiar and (familiar.Variant == FamiliarVariant.MINISAAC
+        or familiar:GetData().AscentionMiniIsaacWeaponProxy) then
+        return true
+    end
+    if entity.ToPlayer and entity:ToPlayer() then return false end
+    return miniSource(entity.SpawnerEntity, depth + 1)
+        or miniSource(entity.Parent, depth + 1)
+end
 
 local function ownerOf(entity, depth)
     if not entity or depth > 4 then return nil end
@@ -48,6 +63,8 @@ local function markWeapon(weapon, itemId)
 end
 
 local function updateTearVisual(tear)
+    local marked = tear:GetData()[TEAR_KEY]
+    if not marked.mini and miniSource(tear, 0) then marked.mini = true end
     local sprite = tear:GetSprite()
     local filename = (sprite:GetFilename() or ""):lower()
     if not filename:match("002%.005_fire tear%.anm2$") then
@@ -58,7 +75,8 @@ local function updateTearVisual(tear)
     if sprite:GetAnimation() ~= animation then
         sprite:Play(animation, true)
     end
-    sprite.Scale = Vector(TEAR_VISUAL_SCALE, TEAR_VISUAL_SCALE)
+    local scale = TEAR_VISUAL_SCALE * (marked.mini and MINI_VISUAL_SCALE or 1)
+    sprite.Scale = Vector(scale, scale)
     sprite.FlipX = animation == "MoveHori" and tear.Velocity.X < 0
     sprite.FlipY = animation == "MoveVert" and tear.Velocity.Y < 0
 end
@@ -180,6 +198,9 @@ function FlamingRose.Register(mod, itemId)
             flame.State = 1
             flame.Timeout = FLAME_LIFETIME
             flame.CollisionDamage = hitDamage * FLAME_DAMAGE_MULTIPLIER
+            if data.mini or miniSource(weapon, 0) then
+                flame.SpriteScale = flame.SpriteScale * MINI_VISUAL_SCALE
+            end
             flame:GetData()[FLAME_KEY] = true
         end, EntityType.ENTITY_NPC)
 

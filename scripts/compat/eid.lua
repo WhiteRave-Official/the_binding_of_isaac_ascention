@@ -14,8 +14,8 @@ local COLLECTIBLES = {
         ru = "Призывает двух Мини-Айзеков#Повторное использование полностью исцеляет выживших Мини-Айзеков и заменяет погибших#Одновременно могут существовать два Мини-Айзека от тиары",
     },
     holyChalice = {
-          en = "{{Tears}} +0.3 fire rate#{{Shotspeed}} {{ColorRed}}-0.15 shot speed{{CR}}#Holding fire releases a rapid stream of bubbles; its frequency scales with fire rate#Direct hit damage varies from 20% to 160%; bubbles slow down, pause, then burst#Each burst deals 33% of the player's damage to nearby enemies",
-          ru = "{{Tears}} +0,3 к скорострельности#{{Shotspeed}} {{ColorRed}}-0,15 к скорости слёз{{CR}}#При удержании атаки выпускает частый поток пузырей; его частота зависит от скорострельности#Прямой урон варьируется от 20% до 160%; пузыри замедляются, ненадолго замирают и лопаются#Каждый взрыв наносит 33% урона игрока врагам поблизости",
+          en = "{{Damage}} {{ColorRed}}-1.5 damage{{CR}}#{{Tears}} +0.3 fire rate#{{Shotspeed}} {{ColorRed}}-0.15 shot speed{{CR}}#Holding fire releases a rapid stream of bubbles; its frequency scales with fire rate#Direct hit damage varies from 40% to 140%; bubbles slow down, pause, then burst#Each burst deals 33% of the player's damage to nearby enemies",
+          ru = "{{Damage}} {{ColorRed}}-1,5 к урону{{CR}}#{{Tears}} +0,3 к скорострельности#{{Shotspeed}} {{ColorRed}}-0,15 к скорости слёз{{CR}}#При удержании атаки выпускает частый поток пузырей; его частота зависит от скорострельности#Прямой урон варьируется от 40% до 140%; пузыри замедляются, ненадолго замирают и лопаются#Каждый взрыв наносит 33% урона игрока врагам поблизости",
     },
     flamingRose = {
         en = "{{Burn}} Tears set enemies on fire for 3 seconds#Each hit releases a flame in a random dirrection that lasts 7 seconds and deals 2x of isaac's damage",

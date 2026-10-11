@@ -33,7 +33,8 @@ CollectibleType = { COLLECTIBLE_MONSTROS_LUNG = 1,
 PlayerType = { PLAYER_LILITH = 1 }
 FamiliarVariant = { INCUBUS = 80 }
 EntityType = { ENTITY_NPC = 1 }
-TearFlags = { TEAR_SPECTRAL = 1 }
+TearFlags = { TEAR_SPECTRAL = 1, TEAR_FETUS = 2 }
+TearVariant = { FETUS = 50 }
 Isaac = { DebugString = function() end }
 Game = function() return { GetFrameCount = function() return 42 end } end
 
@@ -45,6 +46,7 @@ dofile("scripts/minisaac/native_weapon_adapter.lua").Register(mod)
 
 local player = { Velocity = Vector(0, 0), antiGravity = true }
 function player:GetPlayerType() return 0 end
+function player:ToPlayer() return self end
 function player:HasCollectible(id)
     return id == CollectibleType.COLLECTIBLE_ANTI_GRAVITY and self.antiGravity
 end
@@ -114,4 +116,29 @@ late.FrameCount = 2
 callbacks[ModCallbacks.MC_PRE_TEAR_UPDATE](nil, late)
 assert(math.abs(late.ContinueVelocity.X) < 0.001)
 assert(math.abs(late.ContinueVelocity.Y - 10) < 0.001)
+
+local fetus = {
+    InitSeed = 13,
+    Variant = TearVariant.FETUS,
+    SpawnerEntity = proxy,
+    Parent = player,
+    Position = Vector(100, 100),
+    Velocity = Vector(10, 0),
+    ContinueVelocity = Vector(0, 0),
+    WaitFrames = 0,
+    Scale = 1,
+    SpriteScale = Vector(1.2, 1.2),
+    CollisionDamage = 3,
+    FrameCount = 1,
+    data = {},
+}
+function fetus:GetData() return self.data end
+function fetus:HasTearFlags() return false end
+callbacks[ModCallbacks.MC_POST_TEAR_UPDATE](nil, fetus)
+assert(math.abs(fetus.SpriteScale.X - 0.72) < 0.001)
+assert(math.abs(fetus.SpriteScale.Y - 0.72) < 0.001)
+assert(math.abs(fetus.CollisionDamage - 0.6) < 0.001)
+callbacks[ModCallbacks.MC_POST_TEAR_UPDATE](nil, fetus)
+assert(math.abs(fetus.SpriteScale.X - 0.72) < 0.001)
+assert(math.abs(fetus.CollisionDamage - 0.6) < 0.001)
 print("minisaac_anti_gravity: OK")

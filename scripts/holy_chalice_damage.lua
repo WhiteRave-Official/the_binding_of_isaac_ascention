@@ -1,7 +1,7 @@
 local Damage = {}
 
 function Damage.Roll(rng)
-    return 0.2 + rng:RandomFloat() * 1.4
+    return 0.4 + rng:RandomFloat()
 end
 
 function Damage.Seeded(seed)

@@ -10,6 +10,8 @@ for index, name in ipairs(callbackNames) do ModCallbacks[name] = index end
 EntityType = { ENTITY_NPC = 5 }
 EntityFlag = { FLAG_FRIENDLY = 1 }
 FamiliarVariant = { MINISAAC = 1 }
+TearVariant = { FETUS = 50 }
+TearFlags = { TEAR_FETUS = 1 }
 EffectVariant = {
     TEAR_POOF_A = 1, TEAR_POOF_B = 2,
     TEAR_POOF_SMALL = 3, TEAR_POOF_VERYSMALL = 4,
@@ -81,5 +83,35 @@ local unmarked = entity()
 assert(pre(nil, unmarked, 10, 0, nil, 0, source) == nil)
 callbacks[ModCallbacks.MC_NPC_UPDATE](nil, unmarked)
 assert(unmarked.slow == nil)
+
+local geburah = { GetPlayerType = function() return 41 end }
+function geburah:ToPlayer() return self end
+function geburah:ToFamiliar() return nil end
+local fetus = {
+    Variant = TearVariant.FETUS,
+    FrameCount = 1,
+    SpawnerEntity = geburah,
+    data = {},
+}
+function fetus:GetData() return self.data end
+function fetus:HasTearFlags() return false end
+function fetus:GetSprite() error("fetus sprite must not be replaced") end
+callbacks[ModCallbacks.MC_POST_TEAR_INIT](nil, fetus)
+callbacks[ModCallbacks.MC_POST_TEAR_UPDATE](nil, fetus)
+assert(fetus.data.AscentionGeburahGoldenTear == true)
+callbacks[ModCallbacks.MC_POST_TEAR_DEATH](nil, fetus)
+
+local knifeFetus = {
+    Variant = 0,
+    FrameCount = 1,
+    SpawnerEntity = geburah,
+    data = {},
+}
+function knifeFetus:GetData() return self.data end
+function knifeFetus:HasTearFlags(flag) return flag == TearFlags.TEAR_FETUS end
+function knifeFetus:GetSprite() error("fetus knife sprite must not be replaced") end
+callbacks[ModCallbacks.MC_POST_TEAR_INIT](nil, knifeFetus)
+callbacks[ModCallbacks.MC_POST_TEAR_UPDATE](nil, knifeFetus)
+assert(knifeFetus.data.AscentionGeburahGoldenTear == true)
 
 print("eye_of_sun_mark: OK")

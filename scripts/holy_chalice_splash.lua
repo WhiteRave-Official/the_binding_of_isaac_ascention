@@ -63,8 +63,7 @@ function Splash.Register(mod)
                 table.remove(active, i)
             else
                 splash.sprite:SetFrame("Poof", age)
-                splash.sprite:Render(
-                    Isaac.WorldToRenderPosition(splash.position))
+                splash.sprite:Render(Isaac.WorldToScreen(splash.position))
             end
         end
     end)

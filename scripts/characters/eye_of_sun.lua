@@ -19,6 +19,11 @@ local recentGoldenDeaths = {}
 local activeSplashes = {}
 local markedTarget = nil
 
+local function isFetusTear(tear)
+    return tear.Variant == TearVariant.FETUS
+        or tear:HasTearFlags(TearFlags.TEAR_FETUS)
+end
+
 local function validEnemy(entity)
     local npc = entity and entity:ToNPC()
     return npc and npc:IsActiveEnemy(false) and npc:IsVulnerableEnemy()
@@ -180,7 +185,9 @@ function EyeOfSun.Register(mod)
             end
             if isGeburahTear(tear) then markTear(tear) end
         end
-        if tear:GetData()[GOLDEN_TEAR_KEY] then updateTearVisual(tear) end
+        if tear:GetData()[GOLDEN_TEAR_KEY] and not isFetusTear(tear) then
+            updateTearVisual(tear)
+        end
     end)
 
     mod:AddCallback(ModCallbacks.MC_POST_FIRE_SPLIT_TEAR, function(_, child, source)
@@ -194,7 +201,7 @@ function EyeOfSun.Register(mod)
     end)
 
     mod:AddCallback(ModCallbacks.MC_POST_TEAR_DEATH, function(_, tear)
-        if not tear:GetData()[GOLDEN_TEAR_KEY] then return end
+        if not tear:GetData()[GOLDEN_TEAR_KEY] or isFetusTear(tear) then return end
         local sprite = Sprite()
         sprite:Load(SPLASH_ANIMATION, true)
         local frame = Game():GetFrameCount()
@@ -240,7 +247,7 @@ function EyeOfSun.Register(mod)
                 table.remove(activeSplashes, i)
             else
                 splash.sprite:SetFrame("Poof", age)
-                splash.sprite:Render(Isaac.WorldToRenderPosition(splash.position))
+                splash.sprite:Render(Isaac.WorldToScreen(splash.position))
             end
         end
     end)

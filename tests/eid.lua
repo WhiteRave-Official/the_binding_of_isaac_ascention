@@ -37,6 +37,10 @@ assert(entries.trinket["8:en_us"])
 assert(entries.trinket["8:ru"])
 assert(not entries.collectible["8:ru"])
 assert(entries.collectible["643:ru"]:find("15%%"))
+assert(entries.collectible["9:en_us"]:find("%-1%.5 damage")
+    and entries.collectible["9:en_us"]:find("40%% to 140%%"))
+assert(entries.collectible["9:ru"]:find("%-1,5")
+    and entries.collectible["9:ru"]:find("40%% до 140%%"))
 assert(entries.trinket["8:ru"]:find("20%%"))
 for _, language in ipairs({ "en_us", "ru" }) do
     local goldenEye = entries.collectible["1:" .. language]
