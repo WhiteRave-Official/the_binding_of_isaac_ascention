@@ -10,6 +10,7 @@ local Proxy = include("scripts.holy_chalice_proxy")
 local Neptunus = include("scripts.holy_chalice_neptunus")
 local Chocolate = include("scripts.holy_chalice_chocolate")
 local Scaling = include("scripts.holy_chalice_scaling")
+local GeburahFireRate = include("scripts.minisaac.geburah_fire_rate")
 local IDLE_COSTUME = Isaac.GetCostumeIdByPath("gfx/characters/holy_chalice.anm2")
 local SHOOT_COSTUME = Isaac.GetCostumeIdByPath("gfx/characters/holy_chalice_shoot.anm2")
 
@@ -537,7 +538,8 @@ function HolyChalice.FireMiniStream(proxy, mini, aim, itemId)
     if frame < (data.HolyChaliceNextShotFrame or frame) then return true end
     local interval = Scaling.StreamInterval(player, itemId,
         Multishot.CooldownProjectiles(player),
-        Multishot.CooldownMultiplier(player))
+        Multishot.CooldownMultiplier(player),
+        GeburahFireRate.MinimumRate(player))
     data.HolyChaliceNextShotFrame = frame + interval
     local miniData = mini:GetData()
     miniData.AscentionMiniIsaacAim = aim

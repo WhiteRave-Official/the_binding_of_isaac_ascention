@@ -1,5 +1,6 @@
 local Formation = include("scripts.minisaac.formation")
 local Router = include("scripts.minisaac.incubus_router")
+local GeburahFireRate = include("scripts.minisaac.geburah_fire_rate")
 local Combat = {}
 
 local DAMAGE_MULTIPLIER = 0.15
@@ -245,7 +246,8 @@ local function processTear(_, tear)
     local familiarData = familiar:GetData()
     familiarData.AscentionMiniIsaacLastShotFrame = Game():GetFrameCount()
     familiarData.AscentionMiniIsaacLastShotVelocity = velocity
-    familiar.FireCooldown = math.max(1, math.floor(player.MaxFireDelay + 1))
+    familiar.FireCooldown = math.max(1, math.floor(
+        GeburahFireRate.EffectiveCooldown(player, player.MaxFireDelay + 1)))
 
     local kind = weaponType(player)
     if kind == WeaponType.WEAPON_SPIRIT_SWORD then

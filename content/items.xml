@@ -1,7 +1,10 @@
 <items gfxroot="gfx/items/" version="1">
     <passive id="1" name="Golden Eye" description="Let it see for you" gfx="collectible_golden_eye.png" cache="familiars firedelay tearflag" quality="4" craftquality="4" tags="summonable offensive"/>
     <passive id="2" name="Arclight" description="Let there be light" gfx="collectibles_arclight.png" quality="4" craftquality="4" tags="offensive"/>
-    <active id="3" name="Empress's Tiara" description="Call your guardians" gfx="collectibles_empress_tiara.png" quality="3" maxcharges="2" tags="summonable offensive"/>
+    <active id="3" name="Empress's Tiara" description="Call your guardians" gfx="collectibles_empress_tiara_level1.png" quality="3" maxcharges="4" tags="summonable offensive"/>
+    <active id="10" name="Empress's Tiara II" description="Call your guardians" gfx="collectibles_empress_tiara_level2.png" quality="3" maxcharges="3" hidden="true" tags="summonable offensive"/>
+    <active id="11" name="Empress's Tiara III" description="Call your guardians" gfx="collectibles_empress_tiara_level3.png" quality="3" maxcharges="3" hidden="true" tags="summonable offensive"/>
+    <active id="12" name="Empress's Tiara IV" description="Call your guardians" gfx="collectibles_empress_tiara_level4.png" quality="3" maxcharges="2" hidden="true" tags="summonable offensive"/>
     <passive id="5" name="Flaming Rose" description="Every tear leaves a flame" gfx="collectibles_flaming_rose.png" quality="4" craftquality="4" tags="offensive"/>
     <passive id="6" name="Eye of the Old God" description="The sun remembers" gfx="collectibles_eye_of_old_god.png" quality="3" craftquality="3" tags="offensive"/>
     <passive id="7" name="Heart Pendant" description="Strength for your allies" gfx="collectibles_heart_pendant.png" quality="3" craftquality="3" tags="offensive summonable"/>

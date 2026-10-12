@@ -30,12 +30,13 @@ local function capture(player, itemId)
     base.range = player.TearRange
 end
 
-function Scaling.StreamInterval(player, itemId, expectedProjectiles, multiplier)
+function Scaling.StreamInterval(player, itemId, expectedProjectiles, multiplier,
+    minimumRate)
     local rate = fireRate(player)
     local chaliceBonus = TEARS_BONUS * player:GetCollectibleNum(itemId)
     local baseRate = state(player).rate or rate - chaliceBonus
     local extraRate = math.max(0, rate - chaliceBonus - baseRate)
-    local streamRate = math.max(0.1, rate - extraRate * 0.3)
+    local streamRate = math.max(minimumRate or 0.1, rate - extraRate * 0.3)
     local baseInterval = math.max(1,
         BASE_STREAM_INTERVAL * BASE_FIRE_RATE / streamRate)
     local extraProjectiles = math.max(0, (expectedProjectiles or 1) - 1)

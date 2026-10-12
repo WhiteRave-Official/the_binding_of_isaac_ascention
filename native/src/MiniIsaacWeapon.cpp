@@ -239,6 +239,8 @@ int tickProxy(lua_State* state) {
     proxy.suppressProjectile = lua_toboolean(state, 5);
     proxy.chocolateMode = lua_toboolean(state, 6);
     const bool chocolateLaser = lua_toboolean(state, 7);
+    const float maxCycleFrames = lua_isnumber(state, 8)
+        ? std::max(1.0f, static_cast<float>(lua_tonumber(state, 8))) : 0.0f;
     proxy.allowChocolateProjectile = false;
     if (proxy.lastTick == g_Game->_frameCount) {
         lua_pushboolean(state, 0);
@@ -258,6 +260,11 @@ int tickProxy(lua_State* state) {
     const bool knifeWeapon = weapon->GetWeaponType() == WEAPON_KNIFE;
     const bool spiritSwordWeapon = weapon->GetWeaponType() == WEAPON_SPIRIT_SWORD;
     const bool fetusWeapon = weapon->GetWeaponType() == WEAPON_FETUS;
+    const int releaseTicks = weapon->GetWeaponType() == WEAPON_BRIMSTONE
+        ? 25 : knifeWeapon ? 1 : 2;
+    const float chargeStep = maxCycleFrames > 0.0f && maxCharge > 0.0f
+        ? std::max(1.0f, maxCharge /
+            std::max(1.0f, maxCycleFrames - releaseTicks)) : 1.0f;
     if (spiritSwordWeapon) proxy.suppressProjectile = true;
     if (!spiritSwordWeapon) proxy.spiritSwordCharge = 0.0f;
     bool shooting = hasTarget;
@@ -270,20 +277,25 @@ int tickProxy(lua_State* state) {
     } else if (maxCharge > 0.0f) {
         if (syntheticChocolateLaser && proxy.releaseFrames == 0) {
             proxy.syntheticChocolateCharge = std::min(maxCharge,
-                proxy.syntheticChocolateCharge + 1.0f);
+                proxy.syntheticChocolateCharge + chargeStep);
         }
         if (knifeWeapon && proxy.releaseFrames == 0) {
-            *weapon->GetCharge() = std::min(maxCharge, *weapon->GetCharge() + 1.0f);
+            *weapon->GetCharge() = std::min(maxCharge, *weapon->GetCharge() + chargeStep);
         }
         if (spiritSwordWeapon) {
-            proxy.spiritSwordCharge = std::min(maxCharge, proxy.spiritSwordCharge + 1.0f);
+            proxy.spiritSwordCharge = std::min(maxCharge,
+                proxy.spiritSwordCharge + chargeStep);
+        }
+        if (!syntheticChocolateLaser && !knifeWeapon && !spiritSwordWeapon
+            && proxy.releaseFrames == 0 && *weapon->GetCharge() > 0.0f) {
+            *weapon->GetCharge() = std::min(maxCharge,
+                *weapon->GetCharge() + chargeStep - 1.0f);
         }
         const float charge = syntheticChocolateLaser
             ? proxy.syntheticChocolateCharge
             : spiritSwordWeapon ? proxy.spiritSwordCharge : *weapon->GetCharge();
         if (proxy.releaseFrames == 0 && charge >= maxCharge) {
-            proxy.releaseFrames = weapon->GetWeaponType() == WEAPON_BRIMSTONE
-                ? 25 : knifeWeapon ? 1 : 2;
+            proxy.releaseFrames = releaseTicks;
             releaseCharge = true;
             if (syntheticChocolateLaser) proxy.syntheticChocolateCharge = 0.0f;
             if (spiritSwordWeapon) proxy.spiritSwordCharge = 0.0f;

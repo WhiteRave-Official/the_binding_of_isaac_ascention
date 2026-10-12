@@ -274,6 +274,7 @@ include = function(path)
     return included[path]
 end
 Isaac.GetPlayer = function() return player end
+Isaac.GetPlayerTypeByName = function() return 41 end
 local chalice = dofile("scripts/holy_chalice.lua")
 chalice.Register(mod, 9)
 player.count = 0

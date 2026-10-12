@@ -20,7 +20,7 @@ local function isGeburahMini(mini)
     return GEBURAH >= 0 and player and player:GetPlayerType() == GEBURAH
 end
 
-function GeburahHealth.Register(mod)
+function GeburahHealth.Register(mod, tiara)
     mod:AddCallback(ModCallbacks.MC_PRE_FAMILIAR_UPDATE, function(_, mini)
         local frame = Game():GetFrameCount()
         local data = mini:GetData()
@@ -29,17 +29,23 @@ function GeburahHealth.Register(mod)
         end
         if not isGeburahMini(mini) then return end
         local state = data[STATE_KEY]
-        if not state then
-            if mini.MaxHitPoints <= 0 then return end
-            if mini.MaxHitPoints ~= GEBURAH_MAX_HEALTH then
-                local original = mini.HitPoints
-                mini.HitPoints = mini.HitPoints + GEBURAH_MAX_HEALTH - mini.MaxHitPoints
-                mini.MaxHitPoints = GEBURAH_MAX_HEALTH
-                mini.HitPoints = math.min(mini.HitPoints, GEBURAH_MAX_HEALTH)
+        if mini.MaxHitPoints <= 0 then return end
+        local desired = GEBURAH_MAX_HEALTH + tiara.HealthBonus(mini.Player)
+        if not state or state.baseHealth ~= desired then
+            local original = mini.HitPoints
+            local delta = state
+                and (desired - state.baseHealth)
+                    * (mini.MaxHitPoints / state.baseHealth)
+                or desired - mini.MaxHitPoints
+            mini.MaxHitPoints = mini.MaxHitPoints + delta
+            mini.HitPoints = math.min(mini.MaxHitPoints,
+                math.max(0.01, mini.HitPoints + delta))
+            state = state or {}
+            state.baseHealth = desired
+            data[STATE_KEY] = state
+            if delta ~= 0 then
                 logHealth(mini, "health_adjusted", "before=" .. tostring(original))
             end
-            state = {}
-            data[STATE_KEY] = state
         end
         state.beforeUpdate = mini.HitPoints
     end, FamiliarVariant.MINISAAC)

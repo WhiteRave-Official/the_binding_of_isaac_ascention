@@ -1,6 +1,7 @@
 local Router = {}
 local Formation = include("scripts.minisaac.formation")
 local EyeOfSun = include("scripts.characters.eye_of_sun")
+local GeburahFireRate = include("scripts.minisaac.geburah_fire_rate")
 
 local PROXY_KEY = "AscentionMiniIsaacWeaponProxy"
 local OWNER_KEY = "AscentionMiniIsaacProxyOwner"
@@ -8,10 +9,17 @@ local TARGET_REFRESH_INTERVAL = 6
 local SHOT_CLEARANCE = 10
 local GRID_SAMPLE_STEP = 12
 local native = AscentionNative
+local function tickProxy(proxy, mini, x, y, hasTarget,
+    suppressProjectile, chocolateMode, chocolateLaser)
+    return native.TickProxy(proxy, x, y, hasTarget,
+        suppressProjectile, chocolateMode, chocolateLaser,
+        GeburahFireRate.MaximumCycle(mini.Player))
+end
 local LOKIS_HORNS = CollectibleType.COLLECTIBLE_LOKIS_HORNS or 87
 local MONSTROS_LUNG = CollectibleType.COLLECTIBLE_MONSTROS_LUNG
 local TECHNOLOGY = CollectibleType.COLLECTIBLE_TECHNOLOGY
 local CHOCOLATE_MILK = CollectibleType.COLLECTIBLE_CHOCOLATE_MILK
+local HAEMOLACRIA = CollectibleType.COLLECTIBLE_HAEMOLACRIA
 
 local KNIFE_DIRECTIONS = {
     Direction.DOWN,
@@ -515,7 +523,7 @@ function Router.Register(mod, holyChalice, holyChaliceId)
                         .. " target=" .. tostring(tracked.InitSeed))
                 end
             end
-            native.TickProxy(proxy, 0, 0, false)
+            tickProxy(proxy, mini, 0, 0, false)
             return true
         end
         local chargedLaser = kind == WeaponType.WEAPON_LASER
@@ -529,7 +537,7 @@ function Router.Register(mod, holyChalice, holyChaliceId)
             mini:GetData().AscentionMiniIsaacAim = target.Position - mini.Position
         end
         if kind == WeaponType.WEAPON_FETUS then
-            local fired = native.TickProxy(proxy, aim.X, aim.Y, true)
+            local fired = tickProxy(proxy, mini, aim.X, aim.Y, true)
             local data = mini:GetData()
             if fired then
                 data.AscentionMiniIsaacLastShotFrame = Game():GetFrameCount()
@@ -589,7 +597,8 @@ function Router.Register(mod, holyChalice, holyChaliceId)
             data.AscentionMiniIsaacAim = target and aim or nil
             local charge = target and (proxyData.AscentionMiniIsaacKnifeCharge or 0) + 1 or 0
             proxyData.AscentionMiniIsaacKnifeCharge = charge
-            if target and charge >= math.max(1, math.ceil(weapon:GetMaxCharge())) then
+            if target and charge >= math.max(1, math.ceil(
+                GeburahFireRate.EffectiveCharge(mini.Player, weapon:GetMaxCharge()))) then
                 proxyData.AscentionMiniIsaacKnifeCharge = 0
                 data.AscentionMiniIsaacKnifeFourWay = fireKnifeVolley(proxy, mini, knife, aim)
                 proxyData.AscentionMiniIsaacKnifeFlightFrame = Game():GetFrameCount()
@@ -604,7 +613,7 @@ function Router.Register(mod, holyChalice, holyChaliceId)
         if kind == WeaponType.WEAPON_SPIRIT_SWORD then
             local aim = target.Position - mini.Position
             mini:GetData().AscentionMiniIsaacAim = aim
-            local fired = native.TickProxy(proxy, aim.X, aim.Y, true)
+            local fired = tickProxy(proxy, mini, aim.X, aim.Y, true)
             if fired then
                 local data = mini:GetData()
                 data.AscentionMiniIsaacLastShotFrame = Game():GetFrameCount()
@@ -625,7 +634,7 @@ function Router.Register(mod, holyChalice, holyChaliceId)
             local aim = target and (target.Position - mini.Position) or Vector.Zero
             local data = mini:GetData()
             data.AscentionMiniIsaacAim = target and aim or nil
-            local fired, released = native.TickProxy(proxy, aim.X, aim.Y,
+            local fired, released = tickProxy(proxy, mini, aim.X, aim.Y,
                 target ~= nil, chargedTechnology, chargedChocolate,
                 chargedChocolateLaser)
             if (chargedChocolate or chargedChocolateLaser) and target
@@ -714,8 +723,11 @@ function Router.Register(mod, holyChalice, holyChaliceId)
         local aim = target and (target.Position - mini.Position) or Vector.Zero
         mini:GetData().AscentionMiniIsaacAim = target and aim or nil
         if weapon and weapon:GetWeaponType() == WeaponType.WEAPON_KNIFE then return end
+        local suppressExtraTear = weapon
+            and weapon:GetWeaponType() == WeaponType.WEAPON_BRIMSTONE
+            and not mini.Player:HasCollectible(HAEMOLACRIA)
         local fired, techXRelease, brimstoneReleasing =
-            native.TickProxy(proxy, aim.X, aim.Y, target ~= nil)
+            tickProxy(proxy, mini, aim.X, aim.Y, target ~= nil, suppressExtraTear)
         if fired then
             holyChalice.OnMiniNativeFire(proxy, mini, aim, holyChaliceId)
         end

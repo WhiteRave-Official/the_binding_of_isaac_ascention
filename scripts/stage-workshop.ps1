@@ -2,6 +2,10 @@ param([string]$OutputRoot = "D:\IsaacModding\workshop_staging")
 
 $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent $PSScriptRoot
+[xml]$metadata = Get-Content -LiteralPath (Join-Path $repo "metadata.xml") -Raw
+if ([string]$metadata.metadata.id -ne '3814062481') {
+    throw "metadata.xml must contain Ascention's published Workshop item ID 3814062481 before staging an update."
+}
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $stage = Join-Path (Join-Path $OutputRoot $stamp) "the_binding_of_isaac_ascention"
 New-Item -ItemType Directory -Path $stage -Force | Out-Null

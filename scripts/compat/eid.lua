@@ -10,8 +10,20 @@ local COLLECTIBLES = {
         ru = "{{Piercing}} Мечи пронзают врагов#25% шанс призвать меч при выстреле; при 8 удачи шанс достигает 50%#Мечи наносят 50% урона игрока#Попадание мечом с тем же шансом обрушивает луч света",
     },
     tiara = {
-        en = "Summons two Mini Isaacs #Using the tiara again fully heals surviving minisaacs and replaces missing ones#Up to two tiara minisaacsc can be active at once",
-        ru = "Призывает двух Мини-Айзеков#Повторное использование полностью исцеляет выживших Мини-Айзеков и заменяет погибших#Одновременно могут существовать два Мини-Айзека от тиары",
+        en = "{{Battery}} 4 charges#Summons 1 Mini Isaac; use again to heal it by 50% of max HP#Only Geburah upgrades the tiara after 2000 / 4000 / 8000 damage points from her and her allies",
+        ru = "{{Battery}} 4 заряда#Призывает 1 мини-Айзека; повторное использование лечит его на 50% от максимального здоровья#Только Гебура улучшает тиару после 2000 / 4000 / 8000 очков урона от себя и союзников",
+    },
+    tiara2 = {
+        en = "{{Battery}} 3 charges#Summons up to 2 Mini Isaacs; use again to heal surviving guardians by 75% of max HP",
+        ru = "{{Battery}} 3 заряда#Призывает до 2 мини-Айзеков; повторное использование лечит выживших стражников на 75% от максимального здоровья",
+    },
+    tiara3 = {
+        en = "{{Battery}} 3 charges#Summons up to 3 Mini Isaacs; use again to heal surviving guardians by 85% of max HP",
+        ru = "{{Battery}} 3 заряда#Призывает до 3 мини-Айзеков; повторное использование лечит выживших стражников на 85% от максимального здоровья",
+    },
+    tiara4 = {
+        en = "{{Battery}} 2 charges#Summons up to 3 Mini Isaacs; use again to heal surviving guardians by 85% of max HP#Geburah's Mini Isaacs gain 10 maximum HP",
+        ru = "{{Battery}} 2 заряда#Призывает до 3 мини-Айзеков; повторное использование лечит выживших стражников на 85% от максимального здоровья#Мини-Айзеки Гебуры получают +10 к максимальному здоровью",
     },
     holyChalice = {
           en = "{{Damage}} {{ColorRed}}-1.5 damage{{CR}}#{{Tears}} +0.3 fire rate#{{Shotspeed}} {{ColorRed}}-0.15 shot speed{{CR}}#Holding fire releases a rapid stream of bubbles; its frequency scales with fire rate#Direct hit damage varies from 40% to 140%; bubbles slow down, pause, then burst#Each burst deals 33% of the player's damage to nearby enemies",

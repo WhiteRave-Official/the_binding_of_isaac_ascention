@@ -20,6 +20,7 @@ local MiniIsaacRouter = include("scripts.minisaac.incubus_router")
 local MiniIsaacPursuit = include("scripts.minisaac.pursuit")
 local MiniIsaacAggro = include("scripts.minisaac.aggro")
 local GeburahMiniIsaacHealth = include("scripts.minisaac.geburah_health")
+local GeburahMiniIsaacFireRate = include("scripts.minisaac.geburah_fire_rate")
 local MiniIsaacSplitTears = include("scripts.minisaac.split_tears")
 local MiniIsaacNativeWeaponAdapter = include("scripts.minisaac.native_weapon_adapter")
 local MiniIsaacSpiritSwordAdapter = include("scripts.minisaac.spirit_sword_adapter")
@@ -31,6 +32,12 @@ local GOLDEN_EYE_FAMILIAR = Isaac.GetEntityVariantByName("Golden Eye Familiar")
 local ARCLIGHT = Isaac.GetItemIdByName("Arclight")
 local ARCLIGHT_SWORD = Isaac.GetEntityVariantByName("Arclight Sword")
 local EMPRESS_TIARA = Isaac.GetItemIdByName("Empress's Tiara")
+local EMPRESS_TIARA_LEVELS = {
+    EMPRESS_TIARA,
+    Isaac.GetItemIdByName("Empress's Tiara II"),
+    Isaac.GetItemIdByName("Empress's Tiara III"),
+    Isaac.GetItemIdByName("Empress's Tiara IV"),
+}
 local FLAMING_ROSE = Isaac.GetItemIdByName("Flaming Rose")
 local HOLY_CHALICE = Isaac.GetItemIdByName("Holy Chalice")
 local EYE_OF_OLD_GOD = Isaac.GetItemIdByName("Eye of the Old God")
@@ -39,7 +46,7 @@ local BROKEN_PENDANT = Isaac.GetTrinketIdByName("Broken Pendant")
 
 Geburah.Register(mod, EMPRESS_TIARA)
 StartingPocketActives.Register(mod)
-EmpressTiara.Register(mod, EMPRESS_TIARA)
+EmpressTiara.Register(mod, EMPRESS_TIARA_LEVELS)
 GoldenEye.Register(mod, GOLDEN_EYE, GOLDEN_EYE_FAMILIAR, GoldenEyeWeaponAdapter, GoldenEyeTargeting)
 Arclight.Register(mod, ARCLIGHT, ARCLIGHT_SWORD)
 FlamingRose.Register(mod, FLAMING_ROSE)
@@ -48,10 +55,11 @@ EyeOfOldGod.Register(mod, EYE_OF_OLD_GOD, EyeOfSun)
 HeartPendant.Register(mod, HEART_PENDANT)
 MiniIsaacChargeVisuals.Register(mod)
 MiniIsaacCombat.Register(mod)
+GeburahMiniIsaacFireRate.Register(mod)
 MiniIsaacRouter.Register(mod, HolyChalice, HOLY_CHALICE)
 MiniIsaacPursuit.Register(mod)
 MiniIsaacAggro.Register(mod)
-GeburahMiniIsaacHealth.Register(mod)
+GeburahMiniIsaacHealth.Register(mod, EmpressTiara)
 MiniIsaacSplitTears.Register(mod, MiniIsaacSplitLasers)
 MiniIsaacNativeWeaponAdapter.Register(mod)
 MiniIsaacSpiritSwordAdapter.Register(mod)
@@ -63,6 +71,9 @@ Eid.Register(mod, {
     goldenEye = GOLDEN_EYE,
     arclight = ARCLIGHT,
     tiara = EMPRESS_TIARA,
+    tiara2 = EMPRESS_TIARA_LEVELS[2],
+    tiara3 = EMPRESS_TIARA_LEVELS[3],
+    tiara4 = EMPRESS_TIARA_LEVELS[4],
     flamingRose = FLAMING_ROSE,
     holyChalice = HOLY_CHALICE,
     eyeOfOldGod = EYE_OF_OLD_GOD,

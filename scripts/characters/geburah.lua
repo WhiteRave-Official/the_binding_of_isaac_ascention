@@ -102,7 +102,7 @@ function Geburah.Register(mod, tiaraId)
     local function giveStartingTiara(player)
         if isGeburah(player) and tiaraId > 0
             and not player:HasCollectible(tiaraId) then
-            player:AddCollectible(tiaraId, 2, true)
+            player:AddCollectible(tiaraId, 4, true)
         end
     end
 

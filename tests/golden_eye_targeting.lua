@@ -88,8 +88,10 @@ local mod = {
     end,
 }
 Isaac.FindByType = function() return {} end
+local proxy
+local adapter = { ScaleLaser = function() end }
 local goldenEye = dofile("scripts/golden_eye.lua")
-goldenEye.Register(mod, 1234, 5678, {}, targeting)
+goldenEye.Register(mod, 1234, 5678, adapter, targeting)
 
 local playerData = {}
 local player = {
@@ -105,4 +107,54 @@ room.grids[1].State = 1000
 callbacks[ModCallbacks.MC_POST_PLAYER_UPDATE](mod, player)
 assert(playerData.GoldenEyeFireInput == false)
 assert(playerData.GoldenEyeAim == nil)
+
+entities = { enemy }
+local charge = 0
+local weaponType = 1
+WeaponType = { WEAPON_BRIMSTONE = 1, WEAPON_KNIFE = 2 }
+local weapon = {
+    GetMaxCharge = function() return 12 end,
+    GetCharge = function() return charge end,
+    GetWeaponType = function() return weaponType end,
+}
+proxy = {
+    Player = player,
+    GetData = function() return { GoldenEyeWeaponProxy = true } end,
+    GetWeapon = function() return weapon end,
+    ToFamiliar = function(self) return self end,
+}
+Isaac.FindByType = function() return { proxy } end
+GetPtrHash = function(entity) return entity end
+player.ToPlayer = function(self) return self end
+InputHook = { IS_ACTION_PRESSED = 1 }
+ButtonAction = { ACTION_SHOOTLEFT = 1, ACTION_SHOOTRIGHT = 2,
+    ACTION_SHOOTUP = 3, ACTION_SHOOTDOWN = 4 }
+
+callbacks[ModCallbacks.MC_POST_PLAYER_UPDATE](mod, player)
+assert(playerData.GoldenEyeFireInput == true)
+charge = 12
+callbacks[ModCallbacks.MC_POST_PLAYER_UPDATE](mod, player)
+assert(playerData.GoldenEyeFireInput == false,
+    "a full Brimstone charge must release the input")
+
+charge = 0
+for _ = 1, 24 do
+    callbacks[ModCallbacks.MC_POST_PLAYER_UPDATE](mod, player)
+    assert(playerData.GoldenEyeFireInput == false,
+        "Brimstone must stay released throughout the beam")
+end
+callbacks[ModCallbacks.MC_POST_PLAYER_UPDATE](mod, player)
+assert(playerData.GoldenEyeFireInput == true,
+    "Golden Eye must recharge after the Brimstone release window")
+
+weaponType = WeaponType.WEAPON_KNIFE
+charge = 12
+callbacks[ModCallbacks.MC_POST_PLAYER_UPDATE](mod, player)
+assert(playerData.GoldenEyeFireInput == false)
+charge = 0
+callbacks[ModCallbacks.MC_POST_PLAYER_UPDATE](mod, player)
+assert(playerData.GoldenEyeFireInput == false)
+callbacks[ModCallbacks.MC_POST_PLAYER_UPDATE](mod, player)
+assert(playerData.GoldenEyeFireInput == true,
+    "other charge weapons must retain their short release")
 print("golden eye targeting: OK")

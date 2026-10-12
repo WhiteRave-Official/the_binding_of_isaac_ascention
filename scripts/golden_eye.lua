@@ -15,6 +15,7 @@ local ROOM_ENTRY_DELAY = 20
 local ROOM_ENTRY_DELAY_SPREAD = 10
 local SHOT_INTERVAL_MIN = 2
 local SHOT_INTERVAL_MAX = 5
+local BRIMSTONE_RELEASE_TICKS = 25
 local PROXY_VARIANT = FamiliarVariant.INCUBUS
 local KILL_THRESHOLDS = { 50, 100, 200 }
 local SAVE_KEY = "goldenEyeKills"
@@ -401,7 +402,9 @@ local function updateAutoFire(player)
         playerData.GoldenEyeReleaseFrames = playerData.GoldenEyeReleaseFrames - 1
         playerData.GoldenEyeFireInput = false
     elseif maxCharge > 0 and weapon:GetCharge() >= maxCharge then
-        playerData.GoldenEyeReleaseFrames = 1
+        -- Brimstone's beam needs the same release window as the native mini-Isaac proxy.
+        playerData.GoldenEyeReleaseFrames = weapon:GetWeaponType() == WeaponType.WEAPON_BRIMSTONE
+            and BRIMSTONE_RELEASE_TICKS - 1 or 1
         playerData.GoldenEyeFireInput = false
     else
         playerData.GoldenEyeFireInput = true
